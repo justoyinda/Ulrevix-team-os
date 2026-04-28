@@ -1,3 +1,3 @@
 export default function Home() {
-  return <h1>TEST SUCCESS</h1>;
+  return <h1>Ulrevix is live 🚀</h1>;
 }
