@@ -14207,7 +14207,7 @@ const parseRoleInline = (text) => {
 
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [launched, setLaunched] = useState(true); // UI always loads; launch state tracked separately via localStorage
+  const [islaunched, setLaunched] = useState(true); // UI always loads; launch state tracked separately via localStorage
   const [agreementSigned, setAgreementSigned] = useState(false);
   const [user, setUser] = useState(null);
   const [view, setView] = useState("dashboard");
@@ -14337,7 +14337,7 @@ const inactivityRef = useRef(null);
     // Set launch date to NOW — Week 1 / Day 1 starts here
     store.set(KEYS.launched, true);
     store.set(KEYS.launchDate, new Date().toISOString());
-    setLaunched(true);
+    setIsLaunched(true);
   };
 
   const signOut = () => {
