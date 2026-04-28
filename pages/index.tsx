@@ -1,7 +1,6 @@
 export default function Home() {
   return (
     <div>
-      {/* your app.tsx code here */}
       import { useState, useEffect, useRef, useCallback } from "react";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
