@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 function App() {
   return (
     <div>
-      {/* paste your full app.tsx code here */}
+      {/* your app code here */}
       
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -14207,7 +14207,7 @@ const parseRoleInline = (text) => {
 
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [islaunched, setLaunched] = useState(true); // UI always loads; launch state tracked separately via localStorage
+  const [launched, setLaunched] = useState(true); // UI always loads; launch state tracked separately via localStorage
   const [agreementSigned, setAgreementSigned] = useState(false);
   const [user, setUser] = useState(null);
   const [view, setView] = useState("dashboard");
@@ -14337,7 +14337,7 @@ const inactivityRef = useRef(null);
     // Set launch date to NOW — Week 1 / Day 1 starts here
     store.set(KEYS.launched, true);
     store.set(KEYS.launchDate, new Date().toISOString());
-    setIsLaunched(true);
+    setLaunched(true);
   };
 
   const signOut = () => {
@@ -14542,6 +14542,7 @@ const inactivityRef = useRef(null);
     </div>
   );
 }
+
     </div>
   );
 }
