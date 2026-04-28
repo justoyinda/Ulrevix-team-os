@@ -1,10 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from "react";
 
-function App() {
-  return (
-    <div>
-      {/* your app code here */}
-      
+import { useState, useEffect, useRef, useCallback } from "react";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const ADMIN_EMAIL = "hello.ulrevix@gmail.com";
@@ -62,6 +57,7 @@ confidentialitySigned: "ulx_confidentiality_signed", // { email: { signedAt, ful
 
 const store = {
   get: (key) => {
+    if (typeof window === "undefined") return null;
     try {
       return JSON.parse(localStorage.getItem(key));
     } catch {
@@ -69,6 +65,7 @@ const store = {
     }
   },
   set: (key, val) => {
+    if (typeof window === "undefined") return;
     try {
       localStorage.setItem(key, JSON.stringify(val));
     } catch {}
@@ -14547,6 +14544,4 @@ const inactivityRef = useRef(null);
   );
 }
 
-export default function Home() {
-  return <App />;
-}
+export default App;
