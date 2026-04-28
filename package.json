@@ -1,5 +1,5 @@
 {
-  "name": "ulrevix-team-os",
+  "name": "ulrevix-app",
   "private": true,
   "dependencies": {
     "next": "13.5.6",
