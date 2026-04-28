@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 function App() {
   return (
     <div>
       {/* paste your full app.tsx code here */}
-      import { useState, useEffect, useRef, useCallback } from "react";
+      
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const ADMIN_EMAIL = "hello.ulrevix@gmail.com";
