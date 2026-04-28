@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -14536,12 +14535,5 @@ const inactivityRef = useRef(null);
     </div>
   </div>
 )}
-    </div>
-  );
-}
-
-    </div>
-  );
-}
-
+   
 export default App;
