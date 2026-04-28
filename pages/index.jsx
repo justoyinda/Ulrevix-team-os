@@ -11976,47 +11976,35 @@ const [confTab, setConfTab] = useState("view");
               );
             })}
             {blockedEmails.length > 0 && (
-              <div style={{ marginTop: 20 }}>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: RED,
-                    fontFamily: "'DM Mono',monospace",
-                    marginBottom: 10,
-                    letterSpacing: "0.08em",
-                  }}
-                >
-                  BLOCKED EMAILS ({blockedEmails.length})
-                </div>
-                {blockedEmails.map((em) => (
-                  <div
-                    key={em}
-                    style={{
-                      padding: "9px 12px",
-                      borderRadius: 8,
-                      background: RED + "10",
-                      border: `1px solid ${RED}33`,
-                      marginBottom: 6,
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      fontSize: 13,
-                    }}
-                  >
-                    <span style={{ color: "rgba(255,255,255,0.4)" }}>{em}</span>
-                    {blockedEmails.length > 0 && (
   <div style={{ marginTop: 20 }}>
-    <div style={{ fontSize: 11, color: RED, fontFamily: "'DM Mono',monospace", marginBottom: 10, letterSpacing: "0.08em" }}>
+    <div style={{
+      fontSize: 11, color: RED,
+      fontFamily: "'DM Mono',monospace",
+      marginBottom: 10, letterSpacing: "0.08em",
+    }}>
       BLOCKED EMAILS ({blockedEmails.length})
     </div>
     {blockedEmails.map((em) => (
-      <div key={em} style={{ padding: "9px 12px", borderRadius: 8, background: RED + "10", border: `1px solid ${RED}33`, marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
+      <div key={em} style={{
+        padding: "9px 12px", borderRadius: 8,
+        background: RED + "10", border: `1px solid ${RED}33`,
+        marginBottom: 6, display: "flex",
+        justifyContent: "space-between", alignItems: "center",
+        fontSize: 13,
+      }}>
         <span style={{ color: "rgba(255,255,255,0.4)" }}>{em}</span>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <select
             defaultValue="member"
             id={`unblock-role-${em}`}
-            style={{ padding: "4px 10px", background: "rgba(255,255,255,0.06)", border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", fontSize: 11, outline: "none", cursor: "pointer", fontFamily: "'DM Mono',monospace" }}
+            style={{
+              padding: "4px 10px",
+              background: "rgba(255,255,255,0.06)",
+              border: `1px solid ${BORDER}`,
+              borderRadius: 6, color: "#fff", fontSize: 11,
+              outline: "none", cursor: "pointer",
+              fontFamily: "'DM Mono',monospace",
+            }}
           >
             <option value="member">Member</option>
             <option value="admin">Admin</option>
@@ -12035,21 +12023,17 @@ const [confTab, setConfTab] = useState("view");
               }
               if (chosenRole === "admin") {
                 const users = store.get(KEYS.users) || {};
-                if (users[em]) {
-                  users[em].role = "admin";
-                  store.set(KEYS.users, users);
-                }
+                if (users[em]) { users[em].role = "admin"; store.set(KEYS.users, users); }
               } else {
                 const users = store.get(KEYS.users) || {};
                 if (users[em] && users[em].role === "admin" && em !== ADMIN_EMAIL) {
-                  users[em].role = "member";
-                  store.set(KEYS.users, users);
+                  users[em].role = "member"; store.set(KEYS.users, users);
                 }
               }
               const hist = store.get(KEYS.emailHistory) || [];
               hist.unshift({ email: em, action: "authorized", role: chosenRole, by: user.email, at: new Date().toISOString() });
               store.set(KEYS.emailHistory, hist);
-              addNotif(em, "task", `Your access to Ulrevix Team OS has been restored as ${chosenRole === "admin" ? "an Admin" : "a Member"}.`);
+              addNotif(em, "task", `Your access has been restored as ${chosenRole === "admin" ? "an Admin" : "a Member"}.`);
               addActivity(user.email, `unblocked and re-added as ${chosenRole}`, em, null);
               load();
             }}
@@ -12061,14 +12045,6 @@ const [confTab, setConfTab] = useState("view");
     ))}
   </div>
 )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {tab === "pwResets" && (
         <div>
           {pwResets.length === 0 ? (
