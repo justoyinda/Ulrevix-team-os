@@ -916,8 +916,8 @@ const statusColor = (s) =>
     const offlineTimestamp = info.offlineSince || info.lastSeen;
     const color = isOnline ? "#4CAF50" : "rgba(255,255,255,0.25)";
     const label = isOnline
-      ? `Active · last seen ${timeAgo(info.lastSeen)}`
-      : `Offline · since ${timeAgo(offlineTimestamp)}`;
+  ? `Active · since ${timeAgo(info.sessionStart || info.lastSeen)}`
+  : `Offline · last seen ${timeAgo(offlineTimestamp)}`;
   
     return (
       <div title={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
