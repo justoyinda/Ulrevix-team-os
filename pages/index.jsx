@@ -4278,7 +4278,7 @@ if (file.size > MAX_DIRECT) {
         onClick={() => setShowLinkInput(!showLinkInput)}
         style={{ padding: "6px 14px", background: PURPLE + "22", border: `1px solid ${PURPLE}44`, borderRadius: 6, color: PURPLE, fontSize: 11, cursor: "pointer", fontFamily: "'DM Mono',monospace" }}
       >
-        🔗 Submit Link (>5MB)
+        🔗 Submit Link (&gt;5MB)
       </button>
     </div>
     {showLinkInput && (
