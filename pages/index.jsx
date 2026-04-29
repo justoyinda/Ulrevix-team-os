@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
-export default function Home() {
-  return
+
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const ADMIN_EMAIL = "hello.ulrevix@gmail.com";
 const INITIAL_MEMBER_EMAILS = ["oyindamolaagbaje.work@gmail.com"];
@@ -14202,7 +14201,7 @@ const parseRoleInline = (text) => {
 };
 
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
-export default function App() {
+export default function Home() {
   const [launched, setLaunched] = useState(true); // UI always loads; launch state tracked separately via localStorage
   const [agreementSigned, setAgreementSigned] = useState(false);
   const [user, setUser] = useState(null);
@@ -14539,4 +14538,4 @@ const inactivityRef = useRef(null);
   );
 }
 
-}
+
