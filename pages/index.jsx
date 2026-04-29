@@ -7023,28 +7023,29 @@ const ActivityChat = ({ user }) => {
         if (!prev) return prev;
 
         if (prev.type === "outgoing") {
-          const outgoing = calls[`outgoing_${user.email}`];
-          // If our outgoing record is gone, call was cancelled externally
-          if (!outgoing) return null;
+  const outgoing = calls[`outgoing_${user.email}`];
+  if (!outgoing) return null;
 
-          // Check if any target declined (their call entry is missing while we're still ringing)
-          const targets = outgoing.targets || [prev.target];
-          const allGone = targets.every(em => !calls[em]);
-          if (allGone && outgoing.status === "ringing") {
-            // Clean up our outgoing record
-            const updatedCalls = store.get("ulx_calls") || {};
-            delete updatedCalls[`outgoing_${user.email}`];
-            store.set("ulx_calls", updatedCalls);
-            return null;
-          }
-        }
+  // Check if callee accepted
+  if (outgoing.status === "active" && outgoing.acceptedBy) {
+    return { ...prev, type: "active", startedAt: prev.startedAt || Date.now() };
+  }
+
+  // Check if any target declined: their entry is gone but we're still ringing
+  const targets = outgoing.targets || [prev.target];
+  const allGone = targets.every(em => !calls[em] || calls[em].status === "declined");
+  if (allGone && outgoing.status === "ringing") {
+    const updatedCalls = store.get("ulx_calls") || {};
+    delete updatedCalls[`outgoing_${user.email}`];
+    store.set("ulx_calls", updatedCalls);
+    return null;
+  }
+}
 
         if (prev.type === "incoming") {
-          // If our incoming entry was removed (caller cancelled), dismiss the call
-          if (!myCall || myCall.callId !== prev.callId) {
-            return null;
-          }
-        }
+  if (!myCall || myCall.callId !== prev.callId) return null;
+  if (myCall.status === "cancelled") return null;
+}
 
         if (prev.type === "active") {
           // Check if the other party ended the call
@@ -7091,7 +7092,10 @@ const ActivityChat = ({ user }) => {
                 updatedCalls[`outgoing_${user.email}`].status = "active";
                 store.set("ulx_calls", updatedCalls);
               }
-              setActiveCall(prev => prev ? { ...prev, type: "active", startedAt: prev.startedAt || Date.now() } : prev);
+              setActiveCall(prev => {
+  if (!prev) return prev;
+  return { ...prev, type: "active", startedAt: prev.startedAt || Date.now(), connectedWith: sig.fromEmail };
+});
             } catch (e) { console.error("setRemoteDescription error:", e); }
           }
         } else if (sig.type === "ice") {
@@ -7529,6 +7533,23 @@ setActiveCall(prev => ({ ...prev, type: "active", startedAt: Date.now() }));
     delete calls[`outgoing_${user.email}`];
     delete calls[user.email];
     store.set("ulx_calls", calls);
+
+    // Signal to callees that caller cancelled before pickup
+if (activeCall?.type === "outgoing") {
+  const targets = activeCall.targets || (activeCall.target ? [activeCall.target] : []);
+  targets.forEach(em => {
+    const updatedCalls = store.get("ulx_calls") || {};
+    if (updatedCalls[em] && updatedCalls[em].status === "ringing") {
+      updatedCalls[em].status = "cancelled";
+      store.set("ulx_calls", updatedCalls);
+      setTimeout(() => {
+        const c2 = store.get("ulx_calls") || {};
+        delete c2[em];
+        store.set("ulx_calls", c2);
+      }, 2000);
+    }
+  });
+}
   
     if (callId) {
       saveCallLog(callId, user.email, callType, isGroup, groupId, allParticipants, startedAt, Date.now(), allUsers, groups);
@@ -9030,19 +9051,29 @@ setActiveCall(prev => ({ ...prev, type: "active", startedAt: Date.now() }));
           )}
           <div style={{ marginBottom: 24 }} />
           <div style={{ display: "flex", gap: 14, justifyContent: "center" }}>
-            <button onClick={() => {
-              const calls = store.get("ulx_calls") || {};
-              if (activeCall?.callId) {
-                Object.keys(calls).forEach(k => {
-                  if (calls[k]?.callId === activeCall.callId) delete calls[k];
-                });
-              }
-              delete calls[user.email];
-              store.set("ulx_calls", calls);
-              stopLocalStream();
-              closePeerConnections();
-              setActiveCall(null);
-            }} style={{ width: 56, height: 56, borderRadius: "50%", background: RED, border: "none", fontSize: 22, cursor: "pointer" }}>✕</button>
+            onClick={() => {
+  const calls = store.get("ulx_calls") || {};
+  const callerEmail = activeCall?.callerEmail;
+  // Mark our entry as declined so caller detects it
+  if (calls[user.email]) {
+    calls[user.email].status = "declined";
+    store.set("ulx_calls", calls);
+  }
+  // Also mark the caller's outgoing record so they detect decline
+  if (callerEmail && calls[`outgoing_${callerEmail}`]) {
+    calls[`outgoing_${callerEmail}`].status = "declined";
+    store.set("ulx_calls", calls);
+  }
+  setTimeout(() => {
+    const updatedCalls = store.get("ulx_calls") || {};
+    delete updatedCalls[user.email];
+    if (callerEmail) delete updatedCalls[`outgoing_${callerEmail}`];
+    store.set("ulx_calls", updatedCalls);
+  }, 2000);
+  stopLocalStream();
+  closePeerConnections();
+  setActiveCall(null);
+}}
             <button onClick={acceptCall} style={{ width: 56, height: 56, borderRadius: "50%", background: TEAL, border: "none", fontSize: 22, cursor: "pointer" }}>✓</button>
           </div>
           <div style={{ marginTop: 16, fontSize: 11, color: "rgba(255,255,255,0.25)", fontFamily: "'DM Mono',monospace" }}>
@@ -14220,13 +14251,13 @@ useEffect(() => {
         return { type: "incoming", ...myCall };
       });
     } else {
-      setGlobalCall(prev => {
-        if (!prev) return prev;
-        // If our entry is gone, dismiss
-        if (!myCall || myCall.callId !== prev.callId) return null;
-        return prev;
-      });
-    }
+  setGlobalCall(prev => {
+    if (!prev) return prev;
+    if (!myCall || myCall.callId !== prev.callId) return null;
+    if (myCall.status === "cancelled" || myCall.status === "declined") return null;
+    return prev;
+  });
+}
   };
   pollGlobalCalls();
   const t = setInterval(pollGlobalCalls, 1500);
@@ -14243,13 +14274,22 @@ const handleGlobalAcceptCall = () => {
 
 const handleGlobalEndCall = () => {
   const calls = store.get("ulx_calls") || {};
-  if (globalCall?.callId) {
-    Object.keys(calls).forEach(k => {
-      if (calls[k]?.callId === globalCall.callId) delete calls[k];
-    });
+  const callerEmail = globalCall?.callerEmail;
+  // Mark as declined so caller detects it
+  if (calls[user.email]) {
+    calls[user.email].status = "declined";
+    store.set("ulx_calls", calls);
   }
-  delete calls[user.email];
-  store.set("ulx_calls", calls);
+  if (callerEmail && calls[`outgoing_${callerEmail}`]) {
+    calls[`outgoing_${callerEmail}`].status = "declined";
+    store.set("ulx_calls", calls);
+  }
+  setTimeout(() => {
+    const c2 = store.get("ulx_calls") || {};
+    delete c2[user.email];
+    if (callerEmail) delete c2[`outgoing_${callerEmail}`];
+    store.set("ulx_calls", c2);
+  }, 2000);
   setGlobalCall(null);
 };
 
