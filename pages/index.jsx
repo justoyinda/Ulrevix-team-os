@@ -9051,29 +9051,27 @@ if (activeCall?.type === "outgoing") {
           )}
           <div style={{ marginBottom: 24 }} />
           <div style={{ display: "flex", gap: 14, justifyContent: "center" }}>
-            onClick={() => {
-  const calls = store.get("ulx_calls") || {};
-  const callerEmail = activeCall?.callerEmail;
-  // Mark our entry as declined so caller detects it
-  if (calls[user.email]) {
-    calls[user.email].status = "declined";
-    store.set("ulx_calls", calls);
-  }
-  // Also mark the caller's outgoing record so they detect decline
-  if (callerEmail && calls[`outgoing_${callerEmail}`]) {
-    calls[`outgoing_${callerEmail}`].status = "declined";
-    store.set("ulx_calls", calls);
-  }
-  setTimeout(() => {
-    const updatedCalls = store.get("ulx_calls") || {};
-    delete updatedCalls[user.email];
-    if (callerEmail) delete updatedCalls[`outgoing_${callerEmail}`];
-    store.set("ulx_calls", updatedCalls);
-  }, 2000);
-  stopLocalStream();
-  closePeerConnections();
-  setActiveCall(null);
-}}
+            <button onClick={() => {
+              const calls = store.get("ulx_calls") || {};
+              const callerEmail = activeCall?.callerEmail;
+              if (calls[user.email]) {
+                calls[user.email].status = "declined";
+                store.set("ulx_calls", calls);
+              }
+              if (callerEmail && calls[`outgoing_${callerEmail}`]) {
+                calls[`outgoing_${callerEmail}`].status = "declined";
+                store.set("ulx_calls", calls);
+              }
+              setTimeout(() => {
+                const updatedCalls = store.get("ulx_calls") || {};
+                delete updatedCalls[user.email];
+                if (callerEmail) delete updatedCalls[`outgoing_${callerEmail}`];
+                store.set("ulx_calls", updatedCalls);
+              }, 2000);
+              stopLocalStream();
+              closePeerConnections();
+              setActiveCall(null);
+            }} style={{ width: 56, height: 56, borderRadius: "50%", background: RED, border: "none", fontSize: 22, cursor: "pointer" }}>✕</button>
             <button onClick={acceptCall} style={{ width: 56, height: 56, borderRadius: "50%", background: TEAL, border: "none", fontSize: 22, cursor: "pointer" }}>✓</button>
           </div>
           <div style={{ marginTop: 16, fontSize: 11, color: "rgba(255,255,255,0.25)", fontFamily: "'DM Mono',monospace" }}>
