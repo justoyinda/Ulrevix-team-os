@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-export default function Home() {
-  return 
-  
+export default function App() { 
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const ADMIN_EMAIL = "hello.ulrevix@gmail.com";
