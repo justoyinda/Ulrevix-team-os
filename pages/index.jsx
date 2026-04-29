@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 export default function Home() {
-
+  return
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const ADMIN_EMAIL = "hello.ulrevix@gmail.com";
 const INITIAL_MEMBER_EMAILS = ["oyindamolaagbaje.work@gmail.com"];
