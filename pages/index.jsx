@@ -10218,14 +10218,8 @@ const Profile = ({ user, onUserUpdate }) => {
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState({});
 
-  const load = async () => {
+  const load = () => {
     const users = store.get(KEYS.users) || {};
-    // Always fetch fresh from Supabase first
-    const freshUser = await sbAuth.getUser(user.email);
-    if (freshUser) {
-      users[user.email] = { ...users[user.email], ...freshUser };
-      store.set(KEYS.users, users);
-    }
     const me = users[user.email] || {};
     setProfile(me);
     setForm({
@@ -11346,17 +11340,11 @@ const [confTab, setConfTab] = useState("view");
         if (users[email]) {
           users[email][field] = newVal;
           store.set(KEYS.users, users);
-          supabase.from("platform_data")
-            .upsert(
-              { key: KEYS.users, value: users, updated_at: new Date().toISOString() },
-              { onConflict: "key" }
-            )
-            .then(() => sbAuth.setUser(email, users[email]));
         }
         addNotif(
           email,
           "profileChange",
-          `Your profile change (${field}) was approved. Please refresh the page to see your updated profile.`
+          `Your profile change (${field}) was approved.`
         );
       } else {
         addNotif(
@@ -11365,6 +11353,7 @@ const [confTab, setConfTab] = useState("view");
           `Your profile change (${field}) was rejected.`
         );
       }
+      // Save to history
       const hist = store.get(KEYS.profileChangeHistory) || [];
       hist.unshift({
         id,
