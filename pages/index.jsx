@@ -251,13 +251,13 @@ function addActivity(userId, action, target, projectId = null) {
   store.set(KEYS.activity, filtered.slice(0, 200));
 }
 
-function updatePresence(email, online) {
+function updatePresence(email, online, forceNewSession = false) {
   const presence = store.get(KEYS.presence) || {};
   const existing = presence[email] || {};
   presence[email] = {
     lastSeen: new Date().toISOString(),
     online,
-    sessionStart: online ? new Date().toISOString() : null,
+    sessionStart: online ? (forceNewSession ? new Date().toISOString() : (existing.sessionStart || new Date().toISOString())) : null,
     offlineSince: !online ? new Date().toISOString() : null,
   };
   store.set(KEYS.presence, presence);
@@ -14205,7 +14205,7 @@ if (u.role === "admin") isSigned = true;
 
 setAgreementSigned(isSigned);
 setUser(u);
-updatePresence(u.email, true);
+updatePresence(u.email, true, true);  // force fresh sessionStart on every login
 resetInactivity();
   }}
 />
