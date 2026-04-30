@@ -14021,24 +14021,7 @@ const inactivityRef = useRef(null);
     await supabase.from("platform_config").update({ launched: true, launch_date: launchDate }).eq("id", 1);
     setLaunched(true);
   };
-    // Save admin password before wiping — so admin doesn't get locked out
-    const adminPw = (store.get(KEYS.passwords) || {})[ADMIN_EMAIL];
-    const adminUser = (store.get(KEYS.users) || {})[ADMIN_EMAIL];
-    // Clear ALL pre-launch test data
-    Object.values(KEYS).forEach((k) => localStorage.removeItem(k));
-    // Restore admin credentials so they stay logged in after launch
-    if (adminPw) {
-      store.set(KEYS.passwords, { [ADMIN_EMAIL]: adminPw });
-    }
-    if (adminUser) {
-      store.set(KEYS.users, { [ADMIN_EMAIL]: adminUser });
-    }
-    // Set launch date to NOW — Week 1 / Day 1 starts here
-    store.set(KEYS.launched, true);
-    store.set(KEYS.launchDate, new Date().toISOString());
-    setLaunched(true);
-  };
-
+    
   const signOut = () => {
     if (user) updatePresence(user.email, false);
     clearTimeout(inactivityRef.current);
