@@ -12979,6 +12979,15 @@ const AboutUlrevix = ({ user }) => {
   setPreviewMode(false);
   setEditBuffer("");
   setEditBlocks([]);
+  // Force immediate Supabase sync with confirmation
+  supabase.from("platform_data")
+    .upsert(
+      { key: KEYS.aboutSections, value: updated, updated_at: new Date().toISOString() },
+      { onConflict: "key" }
+    )
+    .then(({ error }) => {
+      if (error) alert("Warning: Changes saved locally but failed to sync. " + error.message);
+    });
 };
 
   const toggle = (id) => setOpenSection(openSection === id ? null : id);
