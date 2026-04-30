@@ -1587,10 +1587,11 @@ const Auth = ({ onLogin }) => {
         return;
       }
 
-      // Insert new reset request
+     // Insert new reset request
+      const newId = Date.now().toString() + Math.random().toString(36).slice(2);
       const { data: insertData, error: insertError } = await supabase
         .from("pw_resets")
-        .insert({ email: em, status: "pending", requested_at: new Date().toISOString() })
+        .insert({ id: newId, email: em, status: "pending", requested_at: new Date().toISOString() })
         .select()
         .single();
       console.log("insert result:", insertData);
