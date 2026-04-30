@@ -14174,9 +14174,36 @@ if (pwData.data) {
   store.set(KEYS.passwords, pwMap);
 }
 
-// Check agreement BEFORE setUser so state is ready on first render
-const allSigned = await sbAuth.getConfidentialitySigned();
-setAgreementSigned(!!allSigned[u.email]);
+// Check agreement from both Supabase platform_data AND dedicated table
+let isSigned = false;
+
+// First check platform_data (most reliable source)
+const { data: pdData } = await supabase
+  .from("platform_data")
+  .select("value")
+  .eq("key", "ulx_confidentiality_signed")
+  .maybeSingle();
+
+if (pdData?.value && pdData.value[u.email]) {
+  isSigned = true;
+  // Also restore to localStorage so future checks work
+  store.set(KEYS.confidentialitySigned, pdData.value);
+} else {
+  // Fallback: check dedicated confidentiality_signed table
+  const { data: signedRows } = await supabase
+    .from("confidentiality_signed")
+    .select("*")
+    .eq("email", u.email)
+    .maybeSingle();
+  if (signedRows) {
+    isSigned = true;
+  }
+}
+
+// Admin never needs to sign
+if (u.role === "admin") isSigned = true;
+
+setAgreementSigned(isSigned);
 setUser(u);
 updatePresence(u.email, true);
 resetInactivity();
