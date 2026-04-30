@@ -14013,8 +14013,14 @@ const inactivityRef = useRef(null);
       ).length
     : 0;
 
-  const doLaunch = () => {
-    if (store.get(KEYS.launched)) return; // already launched, do nothing
+  const doLaunch = async () => {
+    if (store.get(KEYS.launched)) return;
+    const launchDate = new Date().toISOString();
+    store.set(KEYS.launched, true);
+    store.set(KEYS.launchDate, launchDate);
+    await supabase.from("platform_config").update({ launched: true, launch_date: launchDate }).eq("id", 1);
+    setLaunched(true);
+  };
     // Save admin password before wiping — so admin doesn't get locked out
     const adminPw = (store.get(KEYS.passwords) || {})[ADMIN_EMAIL];
     const adminUser = (store.get(KEYS.users) || {})[ADMIN_EMAIL];
@@ -14066,6 +14072,12 @@ const inactivityRef = useRef(null);
         <style>{css}</style>
         <Auth
   onLogin={async (u) => {
+    // Sync launch state from Supabase
+    const { data: cfg } = await supabase.from("platform_config").select("launched, launch_date").single();
+    if (cfg?.launched) {
+      store.set(KEYS.launched, true);
+      if (cfg.launch_date) store.set(KEYS.launchDate, cfg.launch_date);
+    }
     // Sync all users from Supabase into localStorage
     const allUsers = await sbAuth.getAllUsers();
     store.set(KEYS.users, allUsers);
