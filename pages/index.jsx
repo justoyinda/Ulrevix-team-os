@@ -14125,6 +14125,14 @@ const pendingRows = await sbAuth.getPendingEmails();
 store.set(KEYS.pendingEmails, pendingRows.map(r => r.email));
 const blocked = await sbAuth.getBlockedEmails();
 store.set(KEYS.blockedEmails, blocked);
+const pwData = await supabase.from("passwords").select("email, hashed_pw");
+if (pwData.data) {
+  const pwMap = {};
+  pwData.data.forEach(({ email, hashed_pw }) => {
+    pwMap[email] = hashed_pw;
+  });
+  store.set(KEYS.passwords, pwMap);
+}
 
 setUser(u);
 updatePresence(u.email, true);
