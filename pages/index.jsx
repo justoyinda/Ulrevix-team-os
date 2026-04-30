@@ -1453,8 +1453,15 @@ const Auth = ({ onLogin }) => {
     if (mode !== "resetWaiting" || !resetId) return;
     const interval = setInterval(async () => {
       const r = await sbAuth.getPwResetById(resetId);
-      if (r?.status === "approved") setMode("resetNew");
-      if (r?.status === "rejected") { setMode("login"); setErr("Password reset was rejected. Use your existing password."); }
+      if (r?.status === "approved") {
+        setMode("resetNew");
+        setErr("");
+      }
+      if (r?.status === "rejected") {
+        setMode("login");
+        setPw("");
+        setErr("Your password reset request was rejected by the admin. You can sign in with your existing password.");
+      }
     }, 3000);
     return () => clearInterval(interval);
   }, [mode, resetId]);
@@ -1487,6 +1494,17 @@ const Auth = ({ onLogin }) => {
       if (!existingPw) { setMode("register"); setLoading(false); return; }
 
       if (hashPw(pw) !== existingPw) { setErr("Incorrect password."); setLoading(false); return; }
+
+      // Check if there is a used/rejected reset — if rejected, user can sign in normally (already handled above since status is not pending)
+      // If approved but password not yet reset, block sign in
+      const allResets = await supabase.from("pw_resets").select("*").eq("email", em).eq("status", "approved");
+      if (allResets.data && allResets.data.length > 0) {
+        setErr("Your password reset was approved. Please use the reset flow to create a new password.");
+        setMode("resetNew");
+        setResetId(allResets.data[0].id);
+        setLoading(false);
+        return;
+      }
 
       let userRecord = await sbAuth.getUser(em);
       if (!userRecord) {
@@ -1552,7 +1570,20 @@ const Auth = ({ onLogin }) => {
     try {
       await sbAuth.setPassword(em, hashPw(pw));
       await sbAuth.updatePwReset(resetId, "used");
-      setInfo("Password updated! You can now sign in.");
+      // Also mark any other approved resets for this email as used
+      const { data: otherResets } = await supabase
+        .from("pw_resets")
+        .select("id")
+        .eq("email", em)
+        .eq("status", "approved");
+      if (otherResets) {
+        for (const r of otherResets) {
+          await sbAuth.updatePwReset(r.id, "used");
+        }
+      }
+      setPw("");
+      setPw2("");
+      setInfo("Password updated successfully. You can now sign in with your new password.");
       setMode("login");
     } catch (e) { setErr("Could not update password. Please try again."); }
     setLoading(false);
@@ -11344,12 +11375,17 @@ const [confTab, setConfTab] = useState("view");
       const em = reset.email;
       await sbAuth.updatePwReset(id, action);
       if (action === "approved") {
+        // Delete password so user is forced to create a new one
+        // Their old password will no longer work until they set a new one
         await sbAuth.deletePassword(em);
         const pws = store.get(KEYS.passwords) || {};
         delete pws[em];
         store.set(KEYS.passwords, pws);
+        addNotif(em, "pwReset", `Your password reset request has been approved. Please sign in and create a new password. Note: your old password will no longer work.`);
+      } else {
+        // Rejected — do NOT delete the password so user can still sign in with old password
+        addNotif(em, "pwReset", `Your password reset request was rejected. You can continue signing in with your existing password.`);
       }
-      addNotif(em, "pwReset", `Your password reset was ${action}.`);
       const hist = store.get(KEYS.pwResetHistory) || [];
       hist.unshift({
         id,
