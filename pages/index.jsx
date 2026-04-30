@@ -13889,6 +13889,7 @@ const parseRoleInline = (text) => {
   );
 };
 
+
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 export default function Home() {
   const [launched, setLaunched] = useState(!!store.get(KEYS.launched)); // UI always loads; launch state tracked separately via localStorage
