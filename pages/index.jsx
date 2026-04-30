@@ -14143,11 +14143,12 @@ if (pwData.data) {
   store.set(KEYS.passwords, pwMap);
 }
 
+// Check agreement BEFORE setUser so state is ready on first render
+const allSigned = await sbAuth.getConfidentialitySigned();
+setAgreementSigned(!!allSigned[u.email]);
 setUser(u);
 updatePresence(u.email, true);
 resetInactivity();
-const allSigned = await sbAuth.getConfidentialitySigned();
-setAgreementSigned(!!allSigned[u.email]);
   }}
 />
       </>
