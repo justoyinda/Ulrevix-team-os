@@ -12634,37 +12634,49 @@ const [confTab, setConfTab] = useState("view");
         </div>
       )}
 
-      {confTab === "signed" && (
-        <div>
-          {Object.keys(allSigned).length === 0 ? (
-            <EmptyState icon="✍" title="No signed agreements yet" sub="Members will appear here once they sign." />
-          ) : (
-            Object.entries(allSigned).map(([email, data]) => {
-              const u = (store.get(KEYS.users) || {})[email] || { name: email, color: GOLD };
-              return (
-                <div key={email} style={{ background: CARD, border: `1px solid ${TEAL}33`, borderLeft: `3px solid ${TEAL}`, borderRadius: 12, padding: "18px 22px", marginBottom: 10 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 10 }}>
-                    <Avatar name={u.name || email} color={u.color || GOLD} size={38} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 3 }}>{u.name || email}</div>
-                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", fontFamily: "'DM Mono',monospace" }}>{email}</div>
-                    </div>
-                    <Badge text="✓ Signed" color={TEAL} />
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-                    {[["Signed Name", data.fullName], ["Signed Date", data.signDate || new Date(data.signedAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })], ["Timestamp", timeAgo(data.signedAt)]].map(([label, val]) => (
-                      <div key={label} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "10px 14px" }}>
-                        <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em", marginBottom: 4 }}>{label.toUpperCase()}</div>
-                        <div style={{ fontSize: 12, color: "#fff", fontWeight: 600 }}>{val}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })
-          )}
+      {confTab === "signed" && (() => {
+  const [supabaseSigned, setSupabaseSigned] = useState(null);
+  useEffect(() => {
+    sbAuth.getConfidentialitySigned().then(data => setSupabaseSigned(data));
+  }, []);
+  const signedToShow = supabaseSigned || allSigned;
+  return (
+    <div>
+      {!supabaseSigned && (
+        <div style={{ padding: "10px 16px", background: GOLD + "10", border: `1px solid ${GOLD}22`, borderRadius: 8, marginBottom: 14, fontSize: 12, color: "rgba(255,255,255,0.4)", fontFamily: "'DM Mono',monospace" }}>
+          Loading all signatures from server…
         </div>
       )}
+      {Object.keys(signedToShow).length === 0 ? (
+        <EmptyState icon="✍" title="No signed agreements yet" sub="Members will appear here once they sign." />
+      ) : (
+        Object.entries(signedToShow).map(([email, data]) => {
+          const u = (store.get(KEYS.users) || {})[email] || { name: email, color: GOLD };
+          return (
+            <div key={email} style={{ background: CARD, border: `1px solid ${TEAL}33`, borderLeft: `3px solid ${TEAL}`, borderRadius: 12, padding: "18px 22px", marginBottom: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 10 }}>
+                <Avatar name={u.name || email} color={u.color || GOLD} size={38} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 3 }}>{u.name || email}</div>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", fontFamily: "'DM Mono',monospace" }}>{email}</div>
+                </div>
+                <Badge text="✓ Signed" color={TEAL} />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                {[["Signed Name", data.fullName], ["Signed Date", data.signDate || new Date(data.signedAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })], ["Timestamp", timeAgo(data.signedAt)]].map(([label, val]) => (
+                  <div key={label} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "10px 14px" }}>
+                    <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em", marginBottom: 4 }}>{label.toUpperCase()}</div>
+                    <div style={{ fontSize: 12, color: "#fff", fontWeight: 600 }}>{val}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+})()}
 
       {confTab === "edit" && (
         previewMode ? (
@@ -12695,11 +12707,20 @@ const [confTab, setConfTab] = useState("view");
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <Btn onClick={() => {
-                store.set(KEYS.confidentialityAgreement, { content: editBlocks, lastEditedAt: new Date().toISOString(), lastEditedBy: user.email });
-                setPreviewMode(false);
-                setConfTab("view");
-                addActivity(user.email, "updated the Confidentiality and Build Agreement", "", null);
-              }} style={{ padding: "9px 22px", fontSize: 12, background: TEAL, color: BG }}>✓ Confirm & Publish</Btn>
+  const confData = { content: editBlocks, lastEditedAt: new Date().toISOString(), lastEditedBy: user.email };
+  store.set(KEYS.confidentialityAgreement, confData);
+  supabase.from("platform_data")
+    .upsert(
+      { key: KEYS.confidentialityAgreement, value: confData, updated_at: new Date().toISOString() },
+      { onConflict: "key" }
+    )
+    .then(({ error }) => {
+      if (error) alert("Warning: Agreement saved locally but failed to sync across devices. " + error.message);
+    });
+  setPreviewMode(false);
+  setConfTab("view");
+  addActivity(user.email, "updated the Confidentiality and Build Agreement", "", null);
+}} style={{ padding: "9px 22px", fontSize: 12, background: TEAL, color: BG }}>✓ Confirm & Publish</Btn>
               <Btn variant="secondary" onClick={() => setPreviewMode(false)} style={{ padding: "9px 16px", fontSize: 12 }}>← Back to Edit</Btn>
               <Btn variant="danger" onClick={() => { setPreviewMode(false); setConfTab("view"); }} style={{ padding: "9px 16px", fontSize: 12 }}>Discard</Btn>
             </div>
