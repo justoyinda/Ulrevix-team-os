@@ -11249,14 +11249,12 @@ const [confTab, setConfTab] = useState("view");
     try {
       const { data, error } = await supabase
         .from("pw_resets")
-        .select("*")
-        .eq("status", "pending");
-      if (error) {
-        console.error("Error fetching pw resets:", error);
-        setPwResets([]);
-      } else {
-        setPwResets(data || []);
-      }
+        .select("*");
+      console.log("ALL pw_resets rows:", data);
+      console.log("pw_resets error:", error);
+      const pending = (data || []).filter(r => r.status === "pending");
+      console.log("pending resets:", pending);
+      setPwResets(pending);
     } catch (e) {
       console.error("pw resets fetch failed:", e);
       setPwResets([]);
