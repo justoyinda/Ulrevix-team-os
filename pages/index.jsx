@@ -7,13 +7,12 @@ const supabase = createClient(
 );
 
 // ─── SUPABASE AUTH HELPERS ────────────────────────────────────────────────────
-const sbAuth = {
-  getPassword: async (email) => {
-    const { data } = await supabase.from("passwords").select("hashed").eq("email", email).single();
-    return data?.hashed || null;
+getPassword: async (email) => {
+    const { data } = await supabase.from("passwords").select("hashed_pw").eq("email", email).single();
+    return data?.hashed_pw || null;
   },
   setPassword: async (email, hashed) => {
-    await supabase.from("passwords").upsert({ email, hashed }, { onConflict: "email" });
+    await supabase.from("passwords").upsert({ email, hashed_pw: hashed }, { onConflict: "email" });
   },
   deletePassword: async (email) => {
     await supabase.from("passwords").delete().eq("email", email);
