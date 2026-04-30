@@ -7,6 +7,7 @@ const supabase = createClient(
 );
 
 // ─── SUPABASE AUTH HELPERS ────────────────────────────────────────────────────
+const sbAuth = {
 getPassword: async (email) => {
     const { data } = await supabase.from("passwords").select("hashed_pw").eq("email", email).single();
     return data?.hashed_pw || null;
