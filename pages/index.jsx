@@ -12636,94 +12636,21 @@ const [confTab, setConfTab] = useState("view");
 
       {confTab === "signed" && (() => {
   const SignedMembersList = () => {
-    const [signedData, setSignedData] = useState(null);
-    const [loadErr, setLoadErr] = useState(false);
+    const [signedData, setSignedData] = useState({});
 
     useEffect(() => {
-      let cancelled = false;
-
-      const loadSigned = async () => {
-        try {
-          // First try: read from platform_data table
-          const { data, error } = await supabase
-            .from("platform_data")
-            .select("value")
-            .eq("key", "ulx_confidentiality_signed")
-            .maybeSingle();
-
-          if (cancelled) return;
-
-          if (!error && data?.value) {
-            setSignedData(data.value);
-            return;
-          }
-
-          // Second try: read from dedicated confidentiality_signed table
-          const { data: rows, error: err2 } = await supabase
-            .from("confidentiality_signed")
-            .select("*");
-
-          if (cancelled) return;
-
-          if (!err2 && rows && rows.length > 0) {
-            const obj = {};
-            rows.forEach(r => {
-              obj[r.email] = {
-                fullName: r.full_name,
-                signDate: r.sign_date,
-                signedAt: r.signed_at,
-              };
-            });
-            setSignedData(obj);
-            return;
-          }
-
-          // Final fallback: use localStorage
-          const local = store.get(KEYS.confidentialitySigned) || {};
-          setSignedData(local);
-
-        } catch (e) {
-          if (!cancelled) {
-            // On any error fall back to localStorage immediately
-            const local = store.get(KEYS.confidentialitySigned) || {};
-            setSignedData(local);
-            setLoadErr(true);
-          }
-        }
+      const refresh = () => {
+        const local = store.get(KEYS.confidentialitySigned) || {};
+        setSignedData(local);
       };
-
-      loadSigned();
-
-      // Safety timeout — never stay stuck longer than 5 seconds
-      const timeout = setTimeout(() => {
-        if (!cancelled) {
-          const local = store.get(KEYS.confidentialitySigned) || {};
-          setSignedData(local);
-          setLoadErr(true);
-        }
-      }, 5000);
-
-      return () => {
-        cancelled = true;
-        clearTimeout(timeout);
-      };
+      refresh();
+      // Re-read every 3 seconds to pick up new signatures synced from Supabase
+      const t = setInterval(refresh, 3000);
+      return () => clearInterval(t);
     }, []);
-
-    if (!signedData) {
-      return (
-        <div style={{ padding: "10px 16px", background: GOLD + "10", border: `1px solid ${GOLD}22`, borderRadius: 8, marginBottom: 14, fontSize: 12, color: "rgba(255,255,255,0.4)", fontFamily: "'DM Mono',monospace" }}>
-          Loading all signatures from server…
-        </div>
-      );
-    }
 
     return (
       <div>
-        {loadErr && (
-          <div style={{ padding: "10px 16px", background: RED + "15", border: `1px solid ${RED}33`, borderRadius: 8, marginBottom: 14, fontSize: 12, color: RED, fontFamily: "'DM Mono',monospace" }}>
-            ⚠ Could not reach server — showing locally cached data. Some signatures from other devices may be missing.
-          </div>
-        )}
         {Object.keys(signedData).length === 0 ? (
           <EmptyState icon="✍" title="No signed agreements yet" sub="Members will appear here once they sign." />
         ) : (
