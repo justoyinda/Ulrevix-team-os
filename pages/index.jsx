@@ -142,6 +142,22 @@ performanceGrowthMetrics: "ulx_performance_growth_metrics", // { email: [{ perio
 confidentialitySigned: "ulx_confidentiality_signed", // { email: { signedAt, fullName, agreedAt } }
 };
 
+const SHARED_KEYS = new Set([
+  "ulx_users", "ulx_pending_emails", "ulx_blocked_emails",
+  "ulx_projects", "ulx_activity", "ulx_weekly", "ulx_monthly",
+  "ulx_messages", "ulx_groups", "ulx_notifs", "ulx_leave_requests",
+  "ulx_email_history", "ulx_pw_resets", "ulx_profile_requests",
+  "ulx_meetings", "ulx_meeting_delete_requests", "ulx_meeting_history",
+  "ulx_report_delete_requests", "ulx_ai_reports", "ulx_issues",
+  "ulx_presence", "ulx_weekly_rankings", "ulx_monthly_rankings",
+  "ulx_weekly_spotlights", "ulx_growth", "ulx_performance_snapshots",
+  "ulx_performance_growth_metrics", "ulx_work_hours",
+  "ulx_confidentiality_agreement", "ulx_confidentiality_signed",
+  "ulx_about_sections", "ulx_role_clarity", "ulx_call_logs",
+  "ulx_pw_reset_history", "ulx_profile_change_history",
+  "ulx_launched", "ulx_launch_date", "ulx_webrtc_signals",
+]);
+
 const store = {
   get: (key) => {
     try {
@@ -153,6 +169,16 @@ const store = {
   set: (key, val) => {
     try {
       localStorage.setItem(key, JSON.stringify(val));
+      if (SHARED_KEYS.has(key)) {
+        supabase.from("platform_data")
+          .upsert(
+            { key, value: val, updated_at: new Date().toISOString() },
+            { onConflict: "key" }
+          )
+          .then(({ error }) => {
+            if (error) console.error("Supabase sync error:", key, error);
+          });
+      }
     } catch {}
   },
   patch: (key, patchFn) => {
@@ -13993,12 +14019,31 @@ const inactivityRef = useRef(null);
     };
     window.addEventListener("beforeunload", handleUnload);
 
+    // Real-time sync: when another device writes to platform_data,
+    // update localStorage on this device immediately
+    const channel = supabase
+      .channel("platform_data_sync")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "platform_data" },
+        (payload) => {
+          if (payload.new && payload.new.key && payload.new.value !== undefined) {
+            localStorage.setItem(
+              payload.new.key,
+              JSON.stringify(payload.new.value)
+            );
+          }
+        }
+      )
+      .subscribe();
+
     return () => {
       events.forEach((e) => window.removeEventListener(e, resetInactivity));
       clearInterval(timerRef.current);
       clearTimeout(inactivityRef.current);
       clearInterval(heartbeat);
       window.removeEventListener("beforeunload", handleUnload);
+      supabase.removeChannel(channel);
     };
   }, [user, resetInactivity]);
 
@@ -14057,25 +14102,35 @@ const inactivityRef = useRef(null);
         <Auth
   onLogin={async (u) => {
     // Sync launch state from Supabase
-    const { data: cfg } = await supabase.from("platform_config").select("launched, launch_date").single();
-    if (cfg?.launched) {
-      store.set(KEYS.launched, true);
-      if (cfg.launch_date) store.set(KEYS.launchDate, cfg.launch_date);
-    }
-    // Sync all users from Supabase into localStorage
-    const allUsers = await sbAuth.getAllUsers();
-    store.set(KEYS.users, allUsers);
-    // Sync pending emails into localStorage
-    const pendingRows = await sbAuth.getPendingEmails();
-    store.set(KEYS.pendingEmails, pendingRows.map(r => r.email));
-    // Sync blocked emails
-    const blocked = await sbAuth.getBlockedEmails();
-    store.set(KEYS.blockedEmails, blocked);
-    setUser(u);
-    updatePresence(u.email, true);
-    resetInactivity();
-    const allSigned = await sbAuth.getConfidentialitySigned();
-    setAgreementSigned(!!allSigned[u.email]);
+const { data: cfg } = await supabase.from("platform_config").select("launched, launch_date").single();
+if (cfg?.launched) {
+  store.set(KEYS.launched, true);
+  if (cfg.launch_date) store.set(KEYS.launchDate, cfg.launch_date);
+}
+
+// Pull ALL shared platform data from Supabase into localStorage
+const { data: platformData } = await supabase
+  .from("platform_data")
+  .select("key, value");
+if (platformData && platformData.length > 0) {
+  platformData.forEach(({ key, value }) => {
+    localStorage.setItem(key, JSON.stringify(value));
+  });
+}
+
+// Sync auth-specific tables (these live in dedicated Supabase tables, not platform_data)
+const allUsers = await sbAuth.getAllUsers();
+store.set(KEYS.users, allUsers);
+const pendingRows = await sbAuth.getPendingEmails();
+store.set(KEYS.pendingEmails, pendingRows.map(r => r.email));
+const blocked = await sbAuth.getBlockedEmails();
+store.set(KEYS.blockedEmails, blocked);
+
+setUser(u);
+updatePresence(u.email, true);
+resetInactivity();
+const allSigned = await sbAuth.getConfidentialitySigned();
+setAgreementSigned(!!allSigned[u.email]);
   }}
 />
       </>
