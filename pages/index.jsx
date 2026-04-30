@@ -12638,16 +12638,35 @@ const [confTab, setConfTab] = useState("view");
   const SignedMembersList = () => {
     const [supabaseSigned, setSupabaseSigned] = useState(null);
     useEffect(() => {
-      sbAuth.getConfidentialitySigned().then(data => setSupabaseSigned(data));
+      supabase
+        .from("platform_data")
+        .select("value")
+        .eq("key", "ulx_confidentiality_signed")
+        .single()
+        .then(({ data, error }) => {
+          if (data?.value) {
+            setSupabaseSigned(data.value);
+          } else {
+            // fallback: try the dedicated table
+            sbAuth.getConfidentialitySigned().then(result => {
+              setSupabaseSigned(result || {});
+            });
+          }
+        });
     }, []);
-    const signedToShow = supabaseSigned || allSigned;
+
+    const signedToShow = supabaseSigned;
+
+    if (!signedToShow) {
+      return (
+        <div style={{ padding: "10px 16px", background: GOLD + "10", border: `1px solid ${GOLD}22`, borderRadius: 8, marginBottom: 14, fontSize: 12, color: "rgba(255,255,255,0.4)", fontFamily: "'DM Mono',monospace" }}>
+          Loading all signatures from server…
+        </div>
+      );
+    }
+
     return (
       <div>
-        {!supabaseSigned && (
-          <div style={{ padding: "10px 16px", background: GOLD + "10", border: `1px solid ${GOLD}22`, borderRadius: 8, marginBottom: 14, fontSize: 12, color: "rgba(255,255,255,0.4)", fontFamily: "'DM Mono',monospace" }}>
-            Loading all signatures from server…
-          </div>
-        )}
         {Object.keys(signedToShow).length === 0 ? (
           <EmptyState icon="✍" title="No signed agreements yet" sub="Members will appear here once they sign." />
         ) : (
@@ -12664,7 +12683,11 @@ const [confTab, setConfTab] = useState("view");
                   <Badge text="✓ Signed" color={TEAL} />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-                  {[["Signed Name", data.fullName], ["Signed Date", data.signDate || new Date(data.signedAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })], ["Timestamp", timeAgo(data.signedAt)]].map(([label, val]) => (
+                  {[
+                    ["Signed Name", data.fullName],
+                    ["Signed Date", data.signDate || new Date(data.signedAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })],
+                    ["Timestamp", timeAgo(data.signedAt)]
+                  ].map(([label, val]) => (
                     <div key={label} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "10px 14px" }}>
                       <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em", marginBottom: 4 }}>{label.toUpperCase()}</div>
                       <div style={{ fontSize: 12, color: "#fff", fontWeight: 600 }}>{val}</div>
