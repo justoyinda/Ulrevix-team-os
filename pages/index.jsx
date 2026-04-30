@@ -10219,14 +10219,13 @@ const Profile = ({ user, onUserUpdate }) => {
   const [form, setForm] = useState({});
 
   const load = async () => {
+    const users = store.get(KEYS.users) || {};
     // Always fetch fresh from Supabase first
     const freshUser = await sbAuth.getUser(user.email);
     if (freshUser) {
-      const users = store.get(KEYS.users) || {};
       users[user.email] = { ...users[user.email], ...freshUser };
       store.set(KEYS.users, users);
     }
-    const users = store.get(KEYS.users) || {};
     const me = users[user.email] || {};
     setProfile(me);
     setForm({
