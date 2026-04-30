@@ -257,7 +257,7 @@ function updatePresence(email, online) {
   presence[email] = {
     lastSeen: new Date().toISOString(),
     online,
-    sessionStart: online ? (existing.sessionStart || new Date().toISOString()) : null,
+    sessionStart: online ? new Date().toISOString() : null,
     offlineSince: !online ? new Date().toISOString() : null,
   };
   store.set(KEYS.presence, presence);
