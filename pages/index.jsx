@@ -11179,14 +11179,13 @@ const [confTab, setConfTab] = useState("view");
   const [previewMode, setPreviewMode] = useState(false);
   const [activeTextBlock, setActiveTextBlock] = useState(null);
 
-  const load = () => {
+  const load = async () => {
     const pending = store.get(KEYS.pendingEmails) || [];
     const blocked = store.get(KEYS.blockedEmails) || [];
     setAllowedEmails([...INITIAL_MEMBER_EMAILS, ...pending]);
     setBlockedEmails(blocked);
-    setPwResets(
-      (store.get(KEYS.pwResets) || []).filter((r) => r.status === "pending")
-    );
+    const supabaseResets = await sbAuth.getPwResets();
+    setPwResets(supabaseResets.filter((r) => r.status === "pending"));
     setProfileReqs(
       (store.get(KEYS.profileRequests) || []).filter(
         (r) => r.status === "pending"
@@ -11194,7 +11193,7 @@ const [confTab, setConfTab] = useState("view");
     );
   };
 
-  useEffect(load, []);
+  useEffect(() => { load(); }, []);
 
   const addMember = () => {
     if (!newEmail.trim()) return;
@@ -11338,14 +11337,14 @@ const [confTab, setConfTab] = useState("view");
     load();
   };
 
-  const handleReset = (id, action) => {
-    const resets = store.get(KEYS.pwResets) || [];
-    const idx = resets.findIndex((r) => r.id === id);
-    if (idx >= 0) {
-      resets[idx].status = action;
-      const em = resets[idx].email;
+  const handleReset = async (id, action) => {
+    const supabaseResets = await sbAuth.getPwResets();
+    const reset = supabaseResets.find((r) => r.id === id);
+    if (reset) {
+      const em = reset.email;
+      await sbAuth.updatePwReset(id, action);
       if (action === "approved") {
-        // Delete the current password so user is forced to create a new one
+        await sbAuth.deletePassword(em);
         const pws = store.get(KEYS.passwords) || {};
         delete pws[em];
         store.set(KEYS.passwords, pws);
@@ -11361,7 +11360,6 @@ const [confTab, setConfTab] = useState("view");
       });
       store.set(KEYS.pwResetHistory, hist);
     }
-    store.set(KEYS.pwResets, resets);
     load();
   };
 
