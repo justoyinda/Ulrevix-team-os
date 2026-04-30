@@ -10218,7 +10218,14 @@ const Profile = ({ user, onUserUpdate }) => {
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState({});
 
-  const load = () => {
+  const load = async () => {
+    // Always fetch fresh from Supabase first
+    const freshUser = await sbAuth.getUser(user.email);
+    if (freshUser) {
+      const users = store.get(KEYS.users) || {};
+      users[user.email] = { ...users[user.email], ...freshUser };
+      store.set(KEYS.users, users);
+    }
     const users = store.get(KEYS.users) || {};
     const me = users[user.email] || {};
     setProfile(me);
@@ -11329,7 +11336,7 @@ const [confTab, setConfTab] = useState("view");
     load();
   };
 
-  const handleProfile = (id, action) => {
+  const handleProfile = async (id, action) => {
     const reqs = store.get(KEYS.profileRequests) || [];
     const idx = reqs.findIndex((r) => r.id === id);
     if (idx >= 0) {
@@ -11340,11 +11347,21 @@ const [confTab, setConfTab] = useState("view");
         if (users[email]) {
           users[email][field] = newVal;
           store.set(KEYS.users, users);
+
+          // Force push updated users to Supabase immediately
+          await supabase.from("platform_data")
+            .upsert(
+              { key: KEYS.users, value: users, updated_at: new Date().toISOString() },
+              { onConflict: "key" }
+            );
+
+          // Also update the dedicated users table
+          await sbAuth.setUser(email, users[email]);
         }
         addNotif(
           email,
           "profileChange",
-          `Your profile change (${field}) was approved.`
+          `Your profile change (${field}) was approved. Please refresh the page to see your updated profile.`
         );
       } else {
         addNotif(
@@ -11353,6 +11370,23 @@ const [confTab, setConfTab] = useState("view");
           `Your profile change (${field}) was rejected.`
         );
       }
+      // Save to history
+      const hist = store.get(KEYS.profileChangeHistory) || [];
+      hist.unshift({
+        id,
+        email,
+        field,
+        oldVal,
+        newVal,
+        action,
+        by: user.email,
+        at: new Date().toISOString(),
+      });
+      store.set(KEYS.profileChangeHistory, hist);
+    }
+    store.set(KEYS.profileRequests, reqs);
+    load();
+  };
       // Save to history
       const hist = store.get(KEYS.profileChangeHistory) || [];
       hist.unshift({
