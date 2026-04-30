@@ -12636,28 +12636,80 @@ const [confTab, setConfTab] = useState("view");
 
       {confTab === "signed" && (() => {
   const SignedMembersList = () => {
-    const [supabaseSigned, setSupabaseSigned] = useState(null);
+    const [signedData, setSignedData] = useState(null);
+    const [loadErr, setLoadErr] = useState(false);
+
     useEffect(() => {
-      supabase
-        .from("platform_data")
-        .select("value")
-        .eq("key", "ulx_confidentiality_signed")
-        .single()
-        .then(({ data, error }) => {
-          if (data?.value) {
-            setSupabaseSigned(data.value);
-          } else {
-            // fallback: try the dedicated table
-            sbAuth.getConfidentialitySigned().then(result => {
-              setSupabaseSigned(result || {});
-            });
+      let cancelled = false;
+
+      const loadSigned = async () => {
+        try {
+          // First try: read from platform_data table
+          const { data, error } = await supabase
+            .from("platform_data")
+            .select("value")
+            .eq("key", "ulx_confidentiality_signed")
+            .maybeSingle();
+
+          if (cancelled) return;
+
+          if (!error && data?.value) {
+            setSignedData(data.value);
+            return;
           }
-        });
+
+          // Second try: read from dedicated confidentiality_signed table
+          const { data: rows, error: err2 } = await supabase
+            .from("confidentiality_signed")
+            .select("*");
+
+          if (cancelled) return;
+
+          if (!err2 && rows && rows.length > 0) {
+            const obj = {};
+            rows.forEach(r => {
+              obj[r.email] = {
+                fullName: r.full_name,
+                signDate: r.sign_date,
+                signedAt: r.signed_at,
+              };
+            });
+            setSignedData(obj);
+            return;
+          }
+
+          // Final fallback: use localStorage
+          const local = store.get(KEYS.confidentialitySigned) || {};
+          setSignedData(local);
+
+        } catch (e) {
+          if (!cancelled) {
+            // On any error fall back to localStorage immediately
+            const local = store.get(KEYS.confidentialitySigned) || {};
+            setSignedData(local);
+            setLoadErr(true);
+          }
+        }
+      };
+
+      loadSigned();
+
+      // Safety timeout — never stay stuck longer than 5 seconds
+      const timeout = setTimeout(() => {
+        if (!cancelled) {
+          const local = store.get(KEYS.confidentialitySigned) || {};
+          setSignedData(local);
+          setLoadErr(true);
+        }
+      }, 5000);
+
+      return () => {
+        cancelled = true;
+        clearTimeout(timeout);
+      };
     }, []);
 
-    const signedToShow = supabaseSigned;
-
-    if (!signedToShow) {
+    if (!signedData) {
       return (
         <div style={{ padding: "10px 16px", background: GOLD + "10", border: `1px solid ${GOLD}22`, borderRadius: 8, marginBottom: 14, fontSize: 12, color: "rgba(255,255,255,0.4)", fontFamily: "'DM Mono',monospace" }}>
           Loading all signatures from server…
@@ -12667,10 +12719,15 @@ const [confTab, setConfTab] = useState("view");
 
     return (
       <div>
-        {Object.keys(signedToShow).length === 0 ? (
+        {loadErr && (
+          <div style={{ padding: "10px 16px", background: RED + "15", border: `1px solid ${RED}33`, borderRadius: 8, marginBottom: 14, fontSize: 12, color: RED, fontFamily: "'DM Mono',monospace" }}>
+            ⚠ Could not reach server — showing locally cached data. Some signatures from other devices may be missing.
+          </div>
+        )}
+        {Object.keys(signedData).length === 0 ? (
           <EmptyState icon="✍" title="No signed agreements yet" sub="Members will appear here once they sign." />
         ) : (
-          Object.entries(signedToShow).map(([email, data]) => {
+          Object.entries(signedData).map(([email, data]) => {
             const u = (store.get(KEYS.users) || {})[email] || { name: email, color: GOLD };
             return (
               <div key={email} style={{ background: CARD, border: `1px solid ${TEAL}33`, borderLeft: `3px solid ${TEAL}`, borderRadius: 12, padding: "18px 22px", marginBottom: 10 }}>
@@ -12685,8 +12742,8 @@ const [confTab, setConfTab] = useState("view");
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
                   {[
                     ["Signed Name", data.fullName],
-                    ["Signed Date", data.signDate || new Date(data.signedAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })],
-                    ["Timestamp", timeAgo(data.signedAt)]
+                    ["Signed Date", data.signDate || (data.signedAt ? new Date(data.signedAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : "—")],
+                    ["Timestamp", data.signedAt ? timeAgo(data.signedAt) : "—"]
                   ].map(([label, val]) => (
                     <div key={label} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "10px 14px" }}>
                       <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em", marginBottom: 4 }}>{label.toUpperCase()}</div>
