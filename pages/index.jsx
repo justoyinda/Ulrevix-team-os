@@ -363,6 +363,14 @@ async function saveTaskUpload(projectId, taskId, file, uploaderEmail) {
           data: reader.result,
         });
         store.set(key, existing);
+        supabase.from("platform_data")
+          .upsert(
+            { key, value: existing, updated_at: new Date().toISOString() },
+            { onConflict: "key" }
+          )
+          .then(({ error }) => {
+            if (error) console.error("Upload sync error:", error);
+          });
         resolve(existing);
       } catch (err) { reject(err); }
     };
@@ -374,7 +382,18 @@ async function saveTaskUpload(projectId, taskId, file, uploaderEmail) {
 async function getTaskUploads(projectId, taskId) {
   try {
     const key = `${KEYS.taskUploads}_${projectId}_${taskId}`;
-    return store.get(key) || [];
+    const local = store.get(key);
+    if (local && local.length > 0) return local;
+    const { data } = await supabase
+      .from("platform_data")
+      .select("value")
+      .eq("key", key)
+      .maybeSingle();
+    if (data?.value) {
+      localStorage.setItem(key, JSON.stringify(data.value));
+      return data.value;
+    }
+    return [];
   } catch { return []; }
 }
 
@@ -3742,12 +3761,21 @@ const AdminUploadReview = ({ uploadId, projectId, taskId, uploadedBy, currentSta
       return;
     }
     const reviewKey = `${KEYS.taskUploadReviews}_${projectId}_${taskId}_${uploadId}`;
-    store.set(reviewKey, {
+    const reviewData = {
       status,
       reviewedBy: adminEmail,
       reviewedAt: new Date().toISOString(),
       feedback: feedback.trim(),
-    });
+    };
+    store.set(reviewKey, reviewData);
+    supabase.from("platform_data")
+      .upsert(
+        { key: reviewKey, value: reviewData, updated_at: new Date().toISOString() },
+        { onConflict: "key" }
+      )
+      .then(({ error }) => {
+        if (error) console.error("Review sync error:", error);
+      });
     if (status === "approved") {
       addNotif(uploadedBy, "task", `Your task upload was approved by admin and is now visible to the team.`);
     } else {
@@ -3844,6 +3872,14 @@ if (file.size > MAX_DIRECT) {
         isLink: true,
       });
       store.set(key, existing);
+      supabase.from("platform_data")
+        .upsert(
+          { key, value: existing, updated_at: new Date().toISOString() },
+          { onConflict: "key" }
+        )
+        .then(({ error }) => {
+          if (error) console.error("Link sync error:", error);
+        });
       load();
       addActivity(uploaderEmail, "submitted task link for:", taskTitle, projectId);
       addNotif(ADMIN_EMAIL, "task", `${uploaderEmail} submitted a link for task: "${taskTitle}"`);
@@ -14154,6 +14190,26 @@ const { data: platformData } = await supabase
   .select("key, value");
 if (platformData && platformData.length > 0) {
   platformData.forEach(({ key, value }) => {
+    localStorage.setItem(key, JSON.stringify(value));
+  });
+}
+
+// Pull dynamic upload and review keys
+const { data: uploadData } = await supabase
+  .from("platform_data")
+  .select("key, value")
+  .like("key", "ulx_task_uploads_%");
+if (uploadData) {
+  uploadData.forEach(({ key, value }) => {
+    localStorage.setItem(key, JSON.stringify(value));
+  });
+}
+const { data: reviewData } = await supabase
+  .from("platform_data")
+  .select("key, value")
+  .like("key", "ulx_task_upload_reviews_%");
+if (reviewData) {
+  reviewData.forEach(({ key, value }) => {
     localStorage.setItem(key, JSON.stringify(value));
   });
 }
