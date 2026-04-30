@@ -11335,7 +11335,7 @@ const [confTab, setConfTab] = useState("view");
     load();
   };
 
-  const handleProfile = async (id, action) => {
+  const handleProfile = (id, action) => {
     const reqs = store.get(KEYS.profileRequests) || [];
     const idx = reqs.findIndex((r) => r.id === id);
     if (idx >= 0) {
@@ -11346,12 +11346,12 @@ const [confTab, setConfTab] = useState("view");
         if (users[email]) {
           users[email][field] = newVal;
           store.set(KEYS.users, users);
-          await supabase.from("platform_data")
+          supabase.from("platform_data")
             .upsert(
               { key: KEYS.users, value: users, updated_at: new Date().toISOString() },
               { onConflict: "key" }
-            );
-          await sbAuth.setUser(email, users[email]);
+            )
+            .then(() => sbAuth.setUser(email, users[email]));
         }
         addNotif(
           email,
