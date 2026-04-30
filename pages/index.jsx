@@ -11346,15 +11346,11 @@ const [confTab, setConfTab] = useState("view");
         if (users[email]) {
           users[email][field] = newVal;
           store.set(KEYS.users, users);
-
-          // Force push updated users to Supabase immediately
           await supabase.from("platform_data")
             .upsert(
               { key: KEYS.users, value: users, updated_at: new Date().toISOString() },
               { onConflict: "key" }
             );
-
-          // Also update the dedicated users table
           await sbAuth.setUser(email, users[email]);
         }
         addNotif(
@@ -11369,7 +11365,6 @@ const [confTab, setConfTab] = useState("view");
           `Your profile change (${field}) was rejected.`
         );
       }
-      // Save to history
       const hist = store.get(KEYS.profileChangeHistory) || [];
       hist.unshift({
         id,
