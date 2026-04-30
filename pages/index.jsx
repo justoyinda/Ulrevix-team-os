@@ -1579,7 +1579,6 @@ const Auth = ({ onLogin }) => {
         .select("*")
         .eq("email", em)
         .eq("status", "pending");
-      console.log("existing resets for", em, ":", existingResets);
       if (existingResets && existingResets.length > 0) {
         setResetId(existingResets[0].id);
         setMode("resetWaiting");
@@ -1594,8 +1593,6 @@ const Auth = ({ onLogin }) => {
         .insert({ id: newId, email: em, status: "pending", requested_at: new Date().toISOString() })
         .select()
         .single();
-      console.log("insert result:", insertData);
-      console.log("insert error:", insertError);
 
       if (insertError) {
         setErr("Could not send reset request: " + insertError.message);
@@ -11280,10 +11277,7 @@ const [confTab, setConfTab] = useState("view");
       const { data, error } = await supabase
         .from("pw_resets")
         .select("*");
-      console.log("ALL pw_resets rows:", data);
-      console.log("pw_resets error:", error);
       const pending = (data || []).filter(r => r.status === "pending");
-      console.log("pending resets:", pending);
       setPwResets(pending);
     } catch (e) {
       console.error("pw resets fetch failed:", e);
