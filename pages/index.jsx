@@ -11381,23 +11381,6 @@ const [confTab, setConfTab] = useState("view");
     store.set(KEYS.profileRequests, reqs);
     load();
   };
-      // Save to history
-      const hist = store.get(KEYS.profileChangeHistory) || [];
-      hist.unshift({
-        id,
-        email,
-        field,
-        oldVal,
-        newVal,
-        action,
-        by: user.email,
-        at: new Date().toISOString(),
-      });
-      store.set(KEYS.profileChangeHistory, hist);
-    }
-    store.set(KEYS.profileRequests, reqs);
-    load();
-  };
 
   const isLaunched = !!store.get(KEYS.launched);
   const leaveReqs = (store.get(KEYS.leaveRequests) || []).filter(
