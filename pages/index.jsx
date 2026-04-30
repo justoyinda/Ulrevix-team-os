@@ -6,6 +6,88 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
+// ─── SUPABASE AUTH HELPERS ────────────────────────────────────────────────────
+const sbAuth = {
+  getPassword: async (email) => {
+    const { data } = await supabase.from("passwords").select("hashed").eq("email", email).single();
+    return data?.hashed || null;
+  },
+  setPassword: async (email, hashed) => {
+    await supabase.from("passwords").upsert({ email, hashed }, { onConflict: "email" });
+  },
+  deletePassword: async (email) => {
+    await supabase.from("passwords").delete().eq("email", email);
+  },
+  getUser: async (email) => {
+    const { data } = await supabase.from("users").select("*").eq("email", email).single();
+    return data || null;
+  },
+  getAllUsers: async () => {
+    const { data } = await supabase.from("users").select("*");
+    if (!data) return {};
+    const obj = {};
+    data.forEach(u => { obj[u.email] = u; });
+    return obj;
+  },
+  setUser: async (email, userData) => {
+    if (!userData) { await supabase.from("users").delete().eq("email", email); return; }
+    await supabase.from("users").upsert({ ...userData, email }, { onConflict: "email" });
+  },
+  getPendingEmails: async () => {
+    const { data } = await supabase.from("pending_emails").select("*");
+    return data || [];
+  },
+  addPendingEmail: async (email, role, byEmail) => {
+    await supabase.from("pending_emails").upsert({ email, role, added_by: byEmail }, { onConflict: "email" });
+  },
+  removePendingEmail: async (email) => {
+    await supabase.from("pending_emails").delete().eq("email", email);
+  },
+  getBlockedEmails: async () => {
+    const { data } = await supabase.from("blocked_emails").select("email");
+    return data ? data.map(r => r.email) : [];
+  },
+  addBlockedEmail: async (email, byEmail) => {
+    await supabase.from("blocked_emails").upsert({ email, blocked_by: byEmail }, { onConflict: "email" });
+  },
+  removeBlockedEmail: async (email) => {
+    await supabase.from("blocked_emails").delete().eq("email", email);
+  },
+  getPwResets: async () => {
+    const { data } = await supabase.from("pw_resets").select("*").eq("status", "pending");
+    return data || [];
+  },
+  getPwResetById: async (id) => {
+    const { data } = await supabase.from("pw_resets").select("*").eq("id", id).single();
+    return data || null;
+  },
+  addPwReset: async (email) => {
+    const { data } = await supabase.from("pw_resets").insert({ email, status: "pending", requested_at: new Date().toISOString() }).select().single();
+    return data?.id || null;
+  },
+  updatePwReset: async (id, status) => {
+    await supabase.from("pw_resets").update({ status }).eq("id", id);
+  },
+  getEmailHistory: async () => {
+    const { data } = await supabase.from("email_history").select("*").order("at", { ascending: false });
+    return data || [];
+  },
+  addEmailHistory: async (email, action, role, byEmail) => {
+    await supabase.from("email_history").insert({ email, action, role, by_email: byEmail, at: new Date().toISOString() });
+  },
+  getConfidentialitySigned: async () => {
+    const { data } = await supabase.from("confidentiality_signed").select("*");
+    if (!data) return {};
+    const obj = {};
+    data.forEach(r => { obj[r.email] = { signedAt: r.signed_at, fullName: r.full_name, signDate: r.sign_date }; });
+    return obj;
+  },
+  setConfidentialitySigned: async (email, fullName, signDate) => {
+    await supabase.from("confidentiality_signed").upsert({ email, full_name: fullName, sign_date: signDate, signed_at: new Date().toISOString() }, { onConflict: "email" });
+  },
+};
+
+
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const ADMIN_EMAIL = "hello.ulrevix@gmail.com";
 const INITIAL_MEMBER_EMAILS = ["oyindamolaagbaje.work@gmail.com"];
@@ -1312,7 +1394,7 @@ const PreLaunch = ({ onLaunch }) => {
 
 // ─── AUTH SCREEN ──────────────────────────────────────────────────────────────
 const Auth = ({ onLogin }) => {
-  const [mode, setMode] = useState("choose"); // choose | login | register | resetRequest | resetWaiting | resetNew
+  const [mode, setMode] = useState("choose");
   const [role, setRole] = useState(null);
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
@@ -1322,609 +1404,182 @@ const Auth = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [resetId, setResetId] = useState(null);
 
-  const allUsers = store.get(KEYS.users) || {};
-  const passwords = store.get(KEYS.passwords) || {};
-  const pendingEmails = store.get(KEYS.pendingEmails) || [];
-  const pwResets = store.get(KEYS.pwResets) || [];
-
-  // Build list of emails that have been granted admin role
-const users = store.get(KEYS.users) || {};
-const adminRoleEmails = Object.entries(users)
-  .filter(([em, u]) => u.role === "admin" && em !== ADMIN_EMAIL)
-  .map(([em]) => em);
-
-// Only include emails from history whose MOST RECENT authorized entry has role === "admin"
-// This ensures a downgraded admin is no longer treated as admin
-const pendingAdminEmails = (() => {
-  const hist = store.get(KEYS.emailHistory) || [];
-  const emailLatestRole = {};
-  // Process history oldest-first so latest entry wins
-  [...hist].reverse().forEach(h => {
-    if (h.action === "authorized" && h.email !== ADMIN_EMAIL) {
-      emailLatestRole[h.email] = h.role;
-    }
-  });
-  return Object.entries(emailLatestRole)
-    .filter(([, role]) => role === "admin")
-    .map(([em]) => em);
-})();
-
-const allAdminEmails = [...new Set([ADMIN_EMAIL, ...adminRoleEmails, ...pendingAdminEmails])];
-
-const allowedEmails =
-  role === "admin"
-    ? allAdminEmails
-    : [...INITIAL_MEMBER_EMAILS, ...pendingEmails].filter(
-        em => !allAdminEmails.includes(em)
-      );
-
-  const isRegistered = (em) => !!passwords[em];
-
-  const handleLoginOrRegister = () => {
-    setErr("");
-    setInfo("");
-
-    const em = email.trim().toLowerCase();
-
-// Prevent admin-role emails from logging in as Member
-if (role === "member" && allAdminEmails.includes(em)) {
-  setErr("This email is not authorized for this role.");
-  return;
-}
-
-// Prevent member emails from logging in as Admin
-if (role === "admin" && !allAdminEmails.includes(em)) {
-  setErr("This email is not authorized for this role.");
-  return;
-}
-    const blockedEmails = store.get(KEYS.blockedEmails) || [];
-    if (blockedEmails.includes(em)) {
-      setErr("This email has been blocked. Contact your admin.");
-      return;
-    }
-    if (
-      !allowedEmails.includes(em) &&
-      !(role === "admin" && em === ADMIN_EMAIL)
-    ) {
-      setErr("This email is not authorized for this role.");
-      return;
-    }
-    // Check if pw reset is pending — block login
-    const pendingReset = pwResets.find(
-      (r) => r.email === em && r.status === "pending"
-    );
-    if (pendingReset) {
-      setResetId(pendingReset.id);
-      setMode("resetWaiting");
-      return;
-    }
-
-    if (!isRegistered(em)) {
-      setMode("register");
-      return;
-    }
-    // login
-    if (hashPw(pw) !== passwords[em]) {
-      setErr("Incorrect password.");
-      return;
-    }
-    
-    const users = store.get(KEYS.users) || {};
-const user = users[em] || {
-  name: em.split("@")[0],
-  email: em,
-  role: em === ADMIN_EMAIL ? "admin" : "member",
-  color: COLORS[Object.keys(users).length % COLORS.length],
-};
-user.email = em;
-// Always use the role stored in the users object (most authoritative source)
-// Fall back to allAdminEmails check only if user record doesn't exist yet
-if (users[em]) {
-  user.role = users[em].role || (allAdminEmails.includes(em) ? "admin" : "member");
-} else {
-  user.role = allAdminEmails.includes(em) ? "admin" : "member";
-}
-onLogin(user);
-  };
-
-  const handleRegister = () => {
-    setErr("");
-    if (pw.length < 6) {
-      setErr("Password must be at least 6 characters.");
-      return;
-    }
-    if (pw !== pw2) {
-      setErr("Passwords do not match.");
-      return;
-    }
-    const em = email.trim().toLowerCase();
-    const pws = store.get(KEYS.passwords) || {};
-    pws[em] = hashPw(pw);
-    store.set(KEYS.passwords, pws);
-    const users = store.get(KEYS.users) || {};
-    if (!users[em]) {
-      users[em] = {
-        name: em.split("@")[0],
-        email: em,
-        role: em === ADMIN_EMAIL || (store.get(KEYS.emailHistory) || []).some(h => h.email === em && h.action === "authorized" && h.role === "admin") ? "admin" : "member",
-        color: COLORS[Object.keys(users).length % COLORS.length],
-        dept: "",
-        title: "",
-        status: "Member",
-        team: "",
-        registeredAt: new Date().toISOString(),
-      };
-    }
-    store.set(KEYS.users, users);
-    addActivity(em, "joined the platform", "", null);
-    const u = users[em];
-    u.email = em;
-    onLogin(u);
-  };
-
-  const handleResetRequest = () => {
-    setErr("");
-    const em = email.trim().toLowerCase();
-    if (!allowedEmails.includes(em)) {
-      setErr("Email not recognized.");
-      return;
-    }
-    
-    // Create new request
-    const existing = pwResets.find(
-      (r) => r.email === em && r.status === "pending"
-    );
-    if (existing) {
-      setResetId(existing.id);
-      setMode("resetWaiting");
-      return;
-    }
-    const id = Date.now().toString();
-    const resets = store.get(KEYS.pwResets) || [];
-    resets.push({
-      id,
-      email: em,
-      requestedAt: new Date().toISOString(),
-      status: "pending",
-    });
-    store.set(KEYS.pwResets, resets);
-    addNotif(ADMIN_EMAIL, "pwReset", `Password reset requested by ${em}`);
-    setResetId(id);
-    setMode("resetWaiting");
-  };
-
-  const handleSetNewPw = () => {
-    setErr("");
-    if (pw.length < 6) {
-      setErr("Password must be at least 6 characters.");
-      return;
-    }
-    if (pw !== pw2) {
-      setErr("Passwords do not match.");
-      return;
-    }
-    const em = email.trim().toLowerCase();
-    const pws = store.get(KEYS.passwords) || {};
-    pws[em] = hashPw(pw);
-    store.set(KEYS.passwords, pws);
-    // Mark reset as used
-    const resets = store.get(KEYS.pwResets) || [];
-    const idx = resets.findIndex((r) => r.id === resetId);
-    if (idx >= 0) resets[idx].status = "used";
-    store.set(KEYS.pwResets, resets);
-    setInfo("Password updated! You can now sign in.");
-    setMode("login");
-  };
-
-  // Check if waiting reset got resolved
   useEffect(() => {
     if (mode !== "resetWaiting" || !resetId) return;
-    const interval = setInterval(() => {
-      const resets = store.get(KEYS.pwResets) || [];
-      const r = resets.find((x) => x.id === resetId);
+    const interval = setInterval(async () => {
+      const r = await sbAuth.getPwResetById(resetId);
       if (r?.status === "approved") setMode("resetNew");
-      if (r?.status === "rejected") {
-        setMode("login");
-        setErr("Password reset was rejected. Use your existing password.");
-      }
+      if (r?.status === "rejected") { setMode("login"); setErr("Password reset was rejected. Use your existing password."); }
     }, 3000);
     return () => clearInterval(interval);
   }, [mode, resetId]);
 
+  const handleLoginOrRegister = async () => {
+    setErr(""); setInfo(""); setLoading(true);
+    const em = email.trim().toLowerCase();
+    try {
+      const blockedEmails = await sbAuth.getBlockedEmails();
+      if (blockedEmails.includes(em)) { setErr("This email has been blocked. Contact your admin."); setLoading(false); return; }
+
+      const pendingRows = await sbAuth.getPendingEmails();
+      const pendingEmails = pendingRows.map(r => r.email);
+      const emailHistory = await sbAuth.getEmailHistory();
+
+      const adminRoleEmails = emailHistory.filter(h => h.action === "authorized" && h.role === "admin" && h.email !== ADMIN_EMAIL).map(h => h.email);
+      const allAdminEmails = [...new Set([ADMIN_EMAIL, ...adminRoleEmails])];
+
+      if (role === "member" && allAdminEmails.includes(em)) { setErr("This email is not authorized for this role."); setLoading(false); return; }
+      if (role === "admin" && !allAdminEmails.includes(em)) { setErr("This email is not authorized for this role."); setLoading(false); return; }
+
+      const allowedEmails = role === "admin" ? allAdminEmails : [...INITIAL_MEMBER_EMAILS, ...pendingEmails].filter(e => !allAdminEmails.includes(e));
+      if (!allowedEmails.includes(em) && !(role === "admin" && em === ADMIN_EMAIL)) { setErr("This email is not authorized for this role."); setLoading(false); return; }
+
+      const pendingReset = await sbAuth.getPwResets();
+      const myReset = pendingReset.find(r => r.email === em && r.status === "pending");
+      if (myReset) { setResetId(myReset.id); setMode("resetWaiting"); setLoading(false); return; }
+
+      const existingPw = await sbAuth.getPassword(em);
+      if (!existingPw) { setMode("register"); setLoading(false); return; }
+
+      if (hashPw(pw) !== existingPw) { setErr("Incorrect password."); setLoading(false); return; }
+
+      let userRecord = await sbAuth.getUser(em);
+      if (!userRecord) {
+        const allUsers = await sbAuth.getAllUsers();
+        const colorIndex = Object.keys(allUsers).length % COLORS.length;
+        userRecord = { email: em, name: em.split("@")[0], role: allAdminEmails.includes(em) ? "admin" : "member", color: COLORS[colorIndex] };
+        await sbAuth.setUser(em, userRecord);
+      }
+      userRecord.email = em;
+      onLogin(userRecord);
+    } catch (e) { setErr("Something went wrong. Please try again."); }
+    setLoading(false);
+  };
+
+  const handleRegister = async () => {
+    setErr(""); setLoading(true);
+    if (pw.length < 6) { setErr("Password must be at least 6 characters."); setLoading(false); return; }
+    if (pw !== pw2) { setErr("Passwords do not match."); setLoading(false); return; }
+    const em = email.trim().toLowerCase();
+    try {
+      await sbAuth.setPassword(em, hashPw(pw));
+      let userRecord = await sbAuth.getUser(em);
+      if (!userRecord) {
+        const allUsers = await sbAuth.getAllUsers();
+        const emailHistory = await sbAuth.getEmailHistory();
+        const adminRoleEmails = emailHistory.filter(h => h.action === "authorized" && h.role === "admin").map(h => h.email);
+        const allAdminEmails = [...new Set([ADMIN_EMAIL, ...adminRoleEmails])];
+        const colorIndex = Object.keys(allUsers).length % COLORS.length;
+        userRecord = { email: em, name: em.split("@")[0], role: allAdminEmails.includes(em) ? "admin" : "member", color: COLORS[colorIndex], dept: "", title: "", status: "", team: "", registered_at: new Date().toISOString() };
+        await sbAuth.setUser(em, userRecord);
+      }
+      addActivity(em, "joined the platform", "", null);
+      userRecord.email = em;
+      onLogin(userRecord);
+    } catch (e) { setErr("Registration failed. Please try again."); }
+    setLoading(false);
+  };
+
+  const handleResetRequest = async () => {
+    setErr(""); setLoading(true);
+    const em = email.trim().toLowerCase();
+    try {
+      const pendingRows = await sbAuth.getPendingEmails();
+      const pendingEmails = pendingRows.map(r => r.email);
+      const allowedEmails = [...INITIAL_MEMBER_EMAILS, ...pendingEmails, ADMIN_EMAIL];
+      if (!allowedEmails.includes(em)) { setErr("Email not recognized."); setLoading(false); return; }
+      const existing = await sbAuth.getPwResets();
+      const myReset = existing.find(r => r.email === em && r.status === "pending");
+      if (myReset) { setResetId(myReset.id); setMode("resetWaiting"); setLoading(false); return; }
+      const id = await sbAuth.addPwReset(em);
+      addNotif(ADMIN_EMAIL, "pwReset", `Password reset requested by ${em}`);
+      setResetId(id);
+      setMode("resetWaiting");
+    } catch (e) { setErr("Could not send reset request. Please try again."); }
+    setLoading(false);
+  };
+
+  const handleSetNewPw = async () => {
+    setErr(""); setLoading(true);
+    if (pw.length < 6) { setErr("Password must be at least 6 characters."); setLoading(false); return; }
+    if (pw !== pw2) { setErr("Passwords do not match."); setLoading(false); return; }
+    const em = email.trim().toLowerCase();
+    try {
+      await sbAuth.setPassword(em, hashPw(pw));
+      await sbAuth.updatePwReset(resetId, "used");
+      setInfo("Password updated! You can now sign in.");
+      setMode("login");
+    } catch (e) { setErr("Could not update password. Please try again."); }
+    setLoading(false);
+  };
+
   const BgGrid = () => (
     <>
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          backgroundImage: `linear-gradient(rgba(200,169,110,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(200,169,110,0.025) 1px,transparent 1px)`,
-          backgroundSize: "60px 60px",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          top: "15%",
-          right: "20%",
-          width: 400,
-          height: 400,
-          borderRadius: "50%",
-          background: `radial-gradient(circle,rgba(126,184,164,0.05) 0%,transparent 70%)`,
-          filter: "blur(60px)",
-        }}
-      />
+      <div style={{ position: "absolute", inset: 0, backgroundImage: `linear-gradient(rgba(200,169,110,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(200,169,110,0.025) 1px,transparent 1px)`, backgroundSize: "60px 60px" }} />
+      <div style={{ position: "absolute", top: "15%", right: "20%", width: 400, height: 400, borderRadius: "50%", background: `radial-gradient(circle,rgba(126,184,164,0.05) 0%,transparent 70%)`, filter: "blur(60px)" }} />
     </>
   );
 
-  if (mode === "choose")
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: BG,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontFamily: "'Sora',sans-serif",
-          position: "relative",
-          overflow: "hidden",
-        }}
-      >
-        <BgGrid />
-        <div
-          style={{
-            position: "relative",
-            width: 440,
-            padding: "48px 40px",
-            background: "rgba(255,255,255,0.02)",
-            border: `1px solid ${BORDER}`,
-            borderRadius: 16,
-          }}
-        >
-          <div style={{ textAlign: "center", marginBottom: 40 }}>
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "6px 14px",
-                border: `1px solid ${GOLD}44`,
-                borderRadius: 8,
-                marginBottom: 24,
-              }}
-            >
-              <div
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: "50%",
-                  background: GOLD,
-                }}
-              />
-              <span
-                style={{
-                  fontFamily: "'DM Mono',monospace",
-                  fontSize: 12,
-                  color: GOLD,
-                  letterSpacing: "0.1em",
-                }}
-              >
-                ULREVIX TEAM OS
-              </span>
-            </div>
-            <h1
-              style={{
-                fontSize: 26,
-                fontWeight: 800,
-                color: "#fff",
-                letterSpacing: "-0.03em",
-                marginBottom: 8,
-              }}
-            >
-              Welcome Back
-            </h1>
-            <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 14 }}>
-              Sign in as your role to continue
-            </p>
+  if (mode === "choose") return (
+    <div style={{ minHeight: "100vh", background: BG, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Sora',sans-serif", position: "relative", overflow: "hidden" }}>
+      <BgGrid />
+      <div style={{ position: "relative", width: 440, padding: "48px 40px", background: "rgba(255,255,255,0.02)", border: `1px solid ${BORDER}`, borderRadius: 16 }}>
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", border: `1px solid ${GOLD}44`, borderRadius: 8, marginBottom: 24 }}>
+            <div style={{ width: 7, height: 7, borderRadius: "50%", background: GOLD }} />
+            <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 12, color: GOLD, letterSpacing: "0.1em" }}>ULREVIX TEAM OS</span>
           </div>
-          <div
-            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}
-          >
-            {[
-              {
-                r: "admin",
-                label: "Admin",
-                icon: "◈",
-                desc: "Full platform access",
-              },
-              {
-                r: "member",
-                label: "Member",
-                icon: "◎",
-                desc: "Team member access",
-              },
-            ].map(({ r, label, icon, desc }) => (
-              <button
-                key={r}
-                onClick={() => {
-                  setRole(r);
-                  setMode("login");
-                }}
-                style={{
-                  padding: "24px 16px",
-                  background: "rgba(255,255,255,0.03)",
-                  border: `1px solid ${BORDER}`,
-                  borderRadius: 12,
-                  cursor: "pointer",
-                  textAlign: "center",
-                  transition: "all 0.15s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = GOLD;
-                  e.currentTarget.style.background = GOLD + "11";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = BORDER;
-                  e.currentTarget.style.background = "rgba(255,255,255,0.03)";
-                }}
-              >
-                <div style={{ fontSize: 24, color: GOLD, marginBottom: 10 }}>
-                  {icon}
-                </div>
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 700,
-                    color: "#fff",
-                    marginBottom: 4,
-                  }}
-                >
-                  {label}
-                </div>
-                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>
-                  {desc}
-                </div>
-              </button>
-            ))}
-          </div>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: "#fff", letterSpacing: "-0.03em", marginBottom: 8 }}>Welcome Back</h1>
+          <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 14 }}>Sign in as your role to continue</p>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          {[{ r: "admin", label: "Admin", icon: "◈", desc: "Full platform access" }, { r: "member", label: "Member", icon: "◎", desc: "Team member access" }].map(({ r, label, icon, desc }) => (
+            <button key={r} onClick={() => { setRole(r); setMode("login"); }} style={{ padding: "24px 16px", background: "rgba(255,255,255,0.03)", border: `1px solid ${BORDER}`, borderRadius: 12, cursor: "pointer", textAlign: "center", transition: "all 0.15s" }} onMouseEnter={(e) => { e.currentTarget.style.borderColor = GOLD; e.currentTarget.style.background = GOLD + "11"; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = BORDER; e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}>
+              <div style={{ fontSize: 24, color: GOLD, marginBottom: 10 }}>{icon}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 4 }}>{label}</div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>{desc}</div>
+            </button>
+          ))}
         </div>
       </div>
-    );
+    </div>
+  );
 
   const isLogin = mode === "login";
   const isRegister = mode === "register";
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: BG,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontFamily: "'Sora',sans-serif",
-        position: "relative",
-        overflow: "hidden",
-      }}
-    >
+    <div style={{ minHeight: "100vh", background: BG, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Sora',sans-serif", position: "relative", overflow: "hidden" }}>
       <BgGrid />
-      <div
-        style={{
-          position: "relative",
-          width: 440,
-          padding: "40px 36px",
-          background: "rgba(255,255,255,0.02)",
-          border: `1px solid ${BORDER}`,
-          borderRadius: 16,
-          animation: "fadeIn 0.3s ease",
-        }}
-      >
-        <button
-          onClick={() => {
-            setMode("choose");
-            setErr("");
-            setInfo("");
-          }}
-          style={{
-            background: "none",
-            border: "none",
-            color: "rgba(255,255,255,0.35)",
-            cursor: "pointer",
-            fontSize: 13,
-            marginBottom: 24,
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
-          ← Back
-        </button>
-
+      <div style={{ position: "relative", width: 440, padding: "40px 36px", background: "rgba(255,255,255,0.02)", border: `1px solid ${BORDER}`, borderRadius: 16, animation: "fadeIn 0.3s ease" }}>
+        <button onClick={() => { setMode("choose"); setErr(""); setInfo(""); }} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.35)", cursor: "pointer", fontSize: 13, marginBottom: 24, display: "flex", alignItems: "center", gap: 6 }}>← Back</button>
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-         
-          <Badge
-            text={role === "admin" ? "ADMIN" : "MEMBER"}
-            color={role === "admin" ? GOLD : TEAL}
-          />
-          
-          <h2
-            style={{
-              fontSize: 22,
-              fontWeight: 800,
-              color: "#fff",
-              marginTop: 14,
-              marginBottom: 6,
-            }}
-          >
-            {mode === "resetRequest"
-              ? "Reset Password"
-              : mode === "resetWaiting"
-              ? "Awaiting Approval"
-              : mode === "resetNew"
-              ? "Set New Password"
-              : isRegister
-              ? "Create Password"
-              : "Sign In"}
+          <Badge text={role === "admin" ? "ADMIN" : "MEMBER"} color={role === "admin" ? GOLD : TEAL} />
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: "#fff", marginTop: 14, marginBottom: 6 }}>
+            {mode === "resetRequest" ? "Reset Password" : mode === "resetWaiting" ? "Awaiting Approval" : mode === "resetNew" ? "Set New Password" : isRegister ? "Create Password" : "Sign In"}
           </h2>
           <p style={{ fontSize: 13, color: "rgba(255,255,255,0.35)" }}>
-            {isRegister
-              ? "First time? Set your password to activate your account."
-              : mode === "resetWaiting"
-              ? "Your request has been sent to the admin."
-              : "Enter your credentials to continue."}
+            {isRegister ? "First time? Set your password to activate your account." : mode === "resetWaiting" ? "Your request has been sent to the admin." : "Enter your credentials to continue."}
           </p>
         </div>
-
-        {err && (
-          <div
-            style={{
-              padding: "10px 14px",
-              background: RED + "22",
-              border: `1px solid ${RED}44`,
-              borderRadius: 8,
-              color: RED,
-              fontSize: 13,
-              marginBottom: 16,
-            }}
-          >
-            {err}
-          </div>
-        )}
-        {info && (
-          <div
-            style={{
-              padding: "10px 14px",
-              background: TEAL + "22",
-              border: `1px solid ${TEAL}44`,
-              borderRadius: 8,
-              color: TEAL,
-              fontSize: 13,
-              marginBottom: 16,
-            }}
-          >
-            {info}
-          </div>
-        )}
-
+        {err && <div style={{ padding: "10px 14px", background: RED + "22", border: `1px solid ${RED}44`, borderRadius: 8, color: RED, fontSize: 13, marginBottom: 16 }}>{err}</div>}
+        {info && <div style={{ padding: "10px 14px", background: TEAL + "22", border: `1px solid ${TEAL}44`, borderRadius: 8, color: TEAL, fontSize: 13, marginBottom: 16 }}>{info}</div>}
         {mode === "resetWaiting" && (
           <div style={{ textAlign: "center", padding: "32px 20px" }}>
-            <div
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: "50%",
-                border: `3px solid ${GOLD}44`,
-                borderTop: `3px solid ${GOLD}`,
-                animation: "spin 1s linear infinite",
-                margin: "0 auto 20px",
-              }}
-            />
-            <p
-              style={{
-                color: "rgba(255,255,255,0.5)",
-                fontSize: 14,
-                lineHeight: 1.7,
-              }}
-            >
-              Waiting for admin to approve your password reset request.
-              <br />
-              <span style={{ color: "rgba(255,255,255,0.25)", fontSize: 12 }}>
-                You cannot log in until this is resolved.
-              </span>
-            </p>
-            <Btn
-              variant="ghost"
-              onClick={() => {
-                setMode("choose");
-              }}
-              style={{ marginTop: 20, fontSize: 12 }}
-            >
-              ← Back to login
-            </Btn>
+            <div style={{ width: 48, height: 48, borderRadius: "50%", border: `3px solid ${GOLD}44`, borderTop: `3px solid ${GOLD}`, animation: "spin 1s linear infinite", margin: "0 auto 20px" }} />
+            <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 14, lineHeight: 1.7 }}>Waiting for admin to approve your password reset request.<br /><span style={{ color: "rgba(255,255,255,0.25)", fontSize: 12 }}>You cannot log in until this is resolved.</span></p>
+            <Btn variant="ghost" onClick={() => setMode("choose")} style={{ marginTop: 20, fontSize: 12 }}>← Back to login</Btn>
           </div>
         )}
-
-        {(isLogin ||
-          isRegister ||
-          mode === "resetRequest" ||
-          mode === "resetNew") && (
+        {(isLogin || isRegister || mode === "resetRequest" || mode === "resetNew") && (
           <>
-            {(isLogin || isRegister || mode === "resetRequest") && (
-              <Inp
-                label="Email Address"
-                value={email}
-                onChange={setEmail}
-                type="email"
-                placeholder={
-                  role === "admin" ? "admin@email.com" : "your@email.com"
-                }
-              />
-            )}
-            {(isLogin || isRegister || mode === "resetNew") && (
-              <Inp
-                label={
-                  isRegister || mode === "resetNew"
-                    ? "New Password"
-                    : "Password"
-                }
-                value={pw}
-                onChange={setPw}
-                type="password"
-                placeholder="At least 6 characters"
-                autoComplete="new-password"
-              />
-            )}
-            {(isRegister || mode === "resetNew") && (
-              <Inp
-                label="Confirm Password"
-                value={pw2}
-                onChange={setPw2}
-                type="password"
-                placeholder="Repeat password"
-                autoComplete="new-password"
-              />
-            )}
-
-            <Btn
-              onClick={
-                mode === "resetRequest"
-                  ? handleResetRequest
-                  : mode === "resetNew"
-                  ? handleSetNewPw
-                  : isRegister
-                  ? handleRegister
-                  : handleLoginOrRegister
-              }
-              style={{ width: "100%", padding: "13px", marginBottom: 14 }}
-            >
-              {isRegister
-                ? "CREATE PASSWORD & SIGN IN"
-                : mode === "resetRequest"
-                ? "SEND RESET REQUEST"
-                : mode === "resetNew"
-                ? "SAVE NEW PASSWORD"
-                : "SIGN IN →"}
+            {(isLogin || isRegister || mode === "resetRequest") && <Inp label="Email Address" value={email} onChange={setEmail} type="email" placeholder={role === "admin" ? "admin@email.com" : "your@email.com"} />}
+            {(isLogin || isRegister || mode === "resetNew") && <Inp label={isRegister || mode === "resetNew" ? "New Password" : "Password"} value={pw} onChange={setPw} type="password" placeholder="At least 6 characters" autoComplete="new-password" />}
+            {(isRegister || mode === "resetNew") && <Inp label="Confirm Password" value={pw2} onChange={setPw2} type="password" placeholder="Repeat password" autoComplete="new-password" />}
+            <Btn onClick={mode === "resetRequest" ? handleResetRequest : mode === "resetNew" ? handleSetNewPw : isRegister ? handleRegister : handleLoginOrRegister} disabled={loading} style={{ width: "100%", padding: "13px", marginBottom: 14 }}>
+              {loading ? "Please wait…" : isRegister ? "CREATE PASSWORD & SIGN IN" : mode === "resetRequest" ? "SEND RESET REQUEST" : mode === "resetNew" ? "SAVE NEW PASSWORD" : "SIGN IN →"}
             </Btn>
-
-            {isLogin && (
-              <div style={{ textAlign: "center" }}>
-                <button
-                  onClick={() => {
-                    setMode("resetRequest");
-                    setErr("");
-                  }}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    color: "rgba(255,255,255,0.3)",
-                    fontSize: 12,
-                    cursor: "pointer",
-                  }}
-                >
-                  Forgot password? Request a reset
-                </button>
-              </div>
-            )}
+            {isLogin && <div style={{ textAlign: "center" }}><button onClick={() => { setMode("resetRequest"); setErr(""); }} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.3)", fontSize: 12, cursor: "pointer" }}>Forgot password? Request a reset</button></div>}
           </>
         )}
       </div>
@@ -14410,16 +14065,26 @@ const inactivityRef = useRef(null);
       <>
         <style>{css}</style>
         <Auth
-  onLogin={(u) => {
+  onLogin={async (u) => {
+    // Sync all users from Supabase into localStorage
+    const allUsers = await sbAuth.getAllUsers();
+    store.set(KEYS.users, allUsers);
+    // Sync pending emails into localStorage
+    const pendingRows = await sbAuth.getPendingEmails();
+    store.set(KEYS.pendingEmails, pendingRows.map(r => r.email));
+    // Sync blocked emails
+    const blocked = await sbAuth.getBlockedEmails();
+    store.set(KEYS.blockedEmails, blocked);
     setUser(u);
     updatePresence(u.email, true);
     resetInactivity();
-    const allSigned = store.get(KEYS.confidentialitySigned) || {};
+    const allSigned = await sbAuth.getConfidentialitySigned();
     setAgreementSigned(!!allSigned[u.email]);
   }}
 />
       </>
     );
+
 
   if (user && !agreementSigned && user.role !== "admin") {
     return (
@@ -14580,5 +14245,3 @@ const inactivityRef = useRef(null);
     </div>
   );
 }
-
-
