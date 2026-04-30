@@ -1486,9 +1486,30 @@ const Auth = ({ onLogin }) => {
       const allowedEmails = role === "admin" ? allAdminEmails : [...INITIAL_MEMBER_EMAILS, ...pendingEmails].filter(e => !allAdminEmails.includes(e));
       if (!allowedEmails.includes(em) && !(role === "admin" && em === ADMIN_EMAIL)) { setErr("This email is not authorized for this role."); setLoading(false); return; }
 
-      const pendingReset = await sbAuth.getPwResets();
-      const myReset = pendingReset.find(r => r.email === em && r.status === "pending");
-      if (myReset) { setResetId(myReset.id); setMode("resetWaiting"); setLoading(false); return; }
+      const { data: pendingResets } = await supabase
+        .from("pw_resets")
+        .select("*")
+        .eq("email", em)
+        .eq("status", "pending");
+      if (pendingResets && pendingResets.length > 0) {
+        setResetId(pendingResets[0].id);
+        setMode("resetWaiting");
+        setLoading(false);
+        return;
+      }
+
+      // Also block if approved but user has not created new password yet
+      const { data: approvedResets } = await supabase
+        .from("pw_resets")
+        .select("*")
+        .eq("email", em)
+        .eq("status", "approved");
+      if (approvedResets && approvedResets.length > 0) {
+        setResetId(approvedResets[0].id);
+        setMode("resetNew");
+        setLoading(false);
+        return;
+      }
 
       const existingPw = await sbAuth.getPassword(em);
       if (!existingPw) { setMode("register"); setLoading(false); return; }
@@ -11204,19 +11225,18 @@ const AdminPanel = ({ user, onLaunch }) => {
   const [profileReqs, setProfileReqs] = useState([]);
   const [allowedEmails, setAllowedEmails] = useState([]);
   const [blockedEmails, setBlockedEmails] = useState([]);
+  const [pwResetsLoading, setPwResetsLoading] = useState(true);
 const textAreaRefsConf = useRef({});
 const [confTab, setConfTab] = useState("view");
   const [editBlocks, setEditBlocks] = useState([]);
   const [previewMode, setPreviewMode] = useState(false);
   const [activeTextBlock, setActiveTextBlock] = useState(null);
 
-  const load = async () => {
+  const load = () => {
     const pending = store.get(KEYS.pendingEmails) || [];
     const blocked = store.get(KEYS.blockedEmails) || [];
     setAllowedEmails([...INITIAL_MEMBER_EMAILS, ...pending]);
     setBlockedEmails(blocked);
-    const supabaseResets = await sbAuth.getPwResets();
-    setPwResets(supabaseResets.filter((r) => r.status === "pending"));
     setProfileReqs(
       (store.get(KEYS.profileRequests) || []).filter(
         (r) => r.status === "pending"
@@ -11224,7 +11244,33 @@ const [confTab, setConfTab] = useState("view");
     );
   };
 
-  useEffect(() => { load(); }, []);
+  const loadPwResets = async () => {
+    setPwResetsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("pw_resets")
+        .select("*")
+        .eq("status", "pending");
+      if (error) {
+        console.error("Error fetching pw resets:", error);
+        setPwResets([]);
+      } else {
+        setPwResets(data || []);
+      }
+    } catch (e) {
+      console.error("pw resets fetch failed:", e);
+      setPwResets([]);
+    }
+    setPwResetsLoading(false);
+  };
+
+  useEffect(() => {
+    load();
+    loadPwResets();
+    // Poll every 10 seconds so admin sees new requests without refreshing
+    const interval = setInterval(loadPwResets, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   const addMember = () => {
     if (!newEmail.trim()) return;
@@ -11369,34 +11415,42 @@ const [confTab, setConfTab] = useState("view");
   };
 
   const handleReset = async (id, action) => {
-    const supabaseResets = await sbAuth.getPwResets();
-    const reset = supabaseResets.find((r) => r.id === id);
-    if (reset) {
-      const em = reset.email;
-      await sbAuth.updatePwReset(id, action);
-      if (action === "approved") {
-        // Delete password so user is forced to create a new one
-        // Their old password will no longer work until they set a new one
-        await sbAuth.deletePassword(em);
-        const pws = store.get(KEYS.passwords) || {};
-        delete pws[em];
-        store.set(KEYS.passwords, pws);
-        addNotif(em, "pwReset", `Your password reset request has been approved. Please sign in and create a new password. Note: your old password will no longer work.`);
-      } else {
-        // Rejected — do NOT delete the password so user can still sign in with old password
-        addNotif(em, "pwReset", `Your password reset request was rejected. You can continue signing in with your existing password.`);
+    try {
+      const { data: resetData } = await supabase
+        .from("pw_resets")
+        .select("*")
+        .eq("id", id)
+        .single();
+      if (resetData) {
+        const em = resetData.email;
+        await supabase
+          .from("pw_resets")
+          .update({ status: action })
+          .eq("id", id);
+        if (action === "approved") {
+          await sbAuth.deletePassword(em);
+          const pws = store.get(KEYS.passwords) || {};
+          delete pws[em];
+          store.set(KEYS.passwords, pws);
+          addNotif(em, "pwReset", `Your password reset request has been approved. Please sign in and you will be prompted to create a new password.`);
+        } else {
+          addNotif(em, "pwReset", `Your password reset request was rejected. You can continue signing in with your existing password.`);
+        }
+        const hist = store.get(KEYS.pwResetHistory) || [];
+        hist.unshift({
+          id,
+          email: em,
+          action,
+          by: user.email,
+          at: new Date().toISOString(),
+        });
+        store.set(KEYS.pwResetHistory, hist);
       }
-      const hist = store.get(KEYS.pwResetHistory) || [];
-      hist.unshift({
-        id,
-        email: em,
-        action,
-        by: user.email,
-        at: new Date().toISOString(),
-      });
-      store.set(KEYS.pwResetHistory, hist);
+    } catch (e) {
+      console.error("handleReset error:", e);
     }
     load();
+    loadPwResets();
   };
 
   const handleProfile = (id, action) => {
@@ -11854,7 +11908,12 @@ const [confTab, setConfTab] = useState("view");
 
       {tab === "pwResets" && (
         <div>
-          {pwResets.length === 0 ? (
+          {pwResetsLoading ? (
+            <div style={{ textAlign: "center", padding: "40px 0" }}>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", border: `3px solid ${GOLD}33`, borderTop: `3px solid ${GOLD}`, animation: "spin 0.8s linear infinite", margin: "0 auto 12px" }} />
+              <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 13 }}>Loading password reset requests...</div>
+            </div>
+          ) : pwResets.length === 0 ? (
             <EmptyState
               icon="◌"
               title="No pending password resets"
