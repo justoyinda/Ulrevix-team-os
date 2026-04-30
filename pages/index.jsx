@@ -1572,14 +1572,43 @@ const Auth = ({ onLogin }) => {
       const pendingEmails = pendingRows.map(r => r.email);
       const allowedEmails = [...INITIAL_MEMBER_EMAILS, ...pendingEmails, ADMIN_EMAIL];
       if (!allowedEmails.includes(em)) { setErr("Email not recognized."); setLoading(false); return; }
-      const existing = await sbAuth.getPwResets();
-      const myReset = existing.find(r => r.email === em && r.status === "pending");
-      if (myReset) { setResetId(myReset.id); setMode("resetWaiting"); setLoading(false); return; }
-      const id = await sbAuth.addPwReset(em);
+
+      // Check if already has a pending reset
+      const { data: existingResets } = await supabase
+        .from("pw_resets")
+        .select("*")
+        .eq("email", em)
+        .eq("status", "pending");
+      console.log("existing resets for", em, ":", existingResets);
+      if (existingResets && existingResets.length > 0) {
+        setResetId(existingResets[0].id);
+        setMode("resetWaiting");
+        setLoading(false);
+        return;
+      }
+
+      // Insert new reset request
+      const { data: insertData, error: insertError } = await supabase
+        .from("pw_resets")
+        .insert({ email: em, status: "pending", requested_at: new Date().toISOString() })
+        .select()
+        .single();
+      console.log("insert result:", insertData);
+      console.log("insert error:", insertError);
+
+      if (insertError) {
+        setErr("Could not send reset request: " + insertError.message);
+        setLoading(false);
+        return;
+      }
+
       addNotif(ADMIN_EMAIL, "pwReset", `Password reset requested by ${em}`);
-      setResetId(id);
+      setResetId(insertData?.id || null);
       setMode("resetWaiting");
-    } catch (e) { setErr("Could not send reset request. Please try again."); }
+    } catch (e) {
+      console.error("handleResetRequest error:", e);
+      setErr("Could not send reset request. Please try again.");
+    }
     setLoading(false);
   };
 
