@@ -1988,6 +1988,15 @@ export default function Home() {
     <>
       <style>{css}</style>
       <Auth onLogin={async (u) => {
+        // Sync all users from Supabase into localStorage
+        const allUsers = await sbAuth.getAllUsers();
+        store.set(KEYS.users, allUsers);
+        // Also sync pending emails into localStorage
+        const pendingRows = await sbAuth.getPendingEmails();
+        store.set(KEYS.pendingEmails, pendingRows.map(r => r.email));
+        // Sync blocked emails
+        const blocked = await sbAuth.getBlockedEmails();
+        store.set(KEYS.blockedEmails, blocked);
         setUser(u);
         updatePresence(u.email, true);
         resetInactivity();
