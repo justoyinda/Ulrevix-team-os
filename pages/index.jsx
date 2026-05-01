@@ -6737,7 +6737,7 @@ const Reports = ({ user }) => {
 };
 
 // ─── ACTIVITY & CHAT ─────────────────────────────────────────────────────────
-const ActivityChat = ({ user }) => {
+const ActivityChat = ({ user, setGlobalCall = () => {} }) => {
   const [tab, setTab] = useState("feed");
   const [chatTarget, setChatTarget] = useState(null); // email or group id
   const [chatMsg, setChatMsg] = useState("");
@@ -7237,6 +7237,12 @@ const ActivityChat = ({ user }) => {
     const streams = { ...(prev.remoteStreams || {}) };
     streams[em] = e.streams[0];
     return { ...prev, type: prev.type === "outgoing" ? "active" : prev.type, remoteStreams: streams };
+  });
+  setGlobalCall(prev => {
+    if (!prev || prev.callId !== callId) return prev;
+    const streams = { ...(prev.remoteStreams || {}) };
+    streams[em] = e.streams[0];
+    return { ...prev, type: "active", remoteStreams: streams };
   });
 };
       const offer = await pc.createOffer();
@@ -14121,51 +14127,230 @@ useEffect(() => {
   const pollGlobalCalls = () => {
     const calls = store.get("ulx_calls") || {};
     const myCall = calls[user.email];
-    if (myCall && myCall.status === "ringing" && myCall.callerEmail !== user.email) {
-      setGlobalCall(prev => {
+
+    setGlobalCall(prev => {
+      // Incoming ringing call for me (I am not the caller)
+      if (myCall && myCall.status === "ringing" && myCall.callerEmail !== user.email) {
         if (prev && prev.callId === myCall.callId) return prev;
         return { type: "incoming", ...myCall };
-      });
-    } else {
-  setGlobalCall(prev => {
-    if (!prev) return prev;
-    if (!myCall || myCall.callId !== prev.callId) return null;
-    if (myCall.status === "cancelled" || myCall.status === "declined") return null;
-    return prev;
-  });
-}
+      }
+
+      // I am the caller — check my outgoing entry
+      const outgoing = calls[`outgoing_${user.email}`];
+      if (outgoing) {
+        if (prev && prev.type === "outgoing" && prev.callId === outgoing.callId) {
+          // Check if callee accepted
+          if (outgoing.status === "active" && outgoing.acceptedBy) {
+            return { ...prev, type: "active" };
+          }
+          // Check if declined
+          if (outgoing.status === "declined") {
+            // Clean up
+            const c2 = store.get("ulx_calls") || {};
+            delete c2[`outgoing_${user.email}`];
+            store.set("ulx_calls", c2);
+            stopLocalStream();
+            closePeerConnections();
+            return null;
+          }
+          return prev;
+        }
+        return prev;
+      }
+
+      // My incoming call was cancelled or declined
+      if (prev && prev.type === "incoming") {
+        if (!myCall || myCall.callId !== prev.callId) return null;
+        if (myCall.status === "cancelled" || myCall.status === "declined") return null;
+      }
+
+      // Active call — check if other party ended it
+      if (prev && prev.type === "active") {
+        const stillActive = calls[`outgoing_${user.email}`] || calls[user.email];
+        if (!stillActive) return null;
+      }
+
+      return prev;
+    });
   };
   pollGlobalCalls();
   const t = setInterval(pollGlobalCalls, 1500);
   return () => clearInterval(t);
 }, [user]);
 
-const handleGlobalAcceptCall = () => {
+useEffect(() => {
+  if (!globalCall || globalCall.type !== "outgoing") return;
+  const callId = globalCall.callId;
+  let signalTimestamp = Date.now() - 5000;
+
+  const pollAnswers = async () => {
+    const signals = (store.get(SIG_KEY) || []).filter(
+      s => s.toEmail === user.email && s.callId === callId && s.createdAt > signalTimestamp
+    );
+    if (signals.length === 0) return;
+    signalTimestamp = Math.max(...signals.map(s => s.createdAt));
+
+    for (const sig of signals) {
+      if (sig.type === "answer") {
+        const pc = globalPeerConns.current[sig.fromEmail] || peerConnections[sig.fromEmail];
+        if (pc && pc.signalingState === "have-local-offer") {
+          try {
+            await pc.setRemoteDescription(new RTCSessionDescription(sig.data.sdp));
+            // Flush buffered ICE
+            const allSigs = store.get(SIG_KEY) || [];
+            allSigs.filter(s => s.type === "ice" && s.fromEmail === sig.fromEmail && s.callId === callId).forEach(s => {
+              pc.addIceCandidate(new RTCIceCandidate(s.data)).catch(() => {});
+            });
+            // Mark call as active
+            setGlobalCall(prev => {
+              if (!prev) return prev;
+              return { ...prev, type: "active", connectedWith: sig.fromEmail, startedAt: prev.startedAt || Date.now() };
+            });
+            const updatedCalls = store.get("ulx_calls") || {};
+            if (updatedCalls[`outgoing_${user.email}`]) {
+              updatedCalls[`outgoing_${user.email}`].status = "active";
+              store.set("ulx_calls", updatedCalls);
+            }
+          } catch (e) { console.error("Global answer processing error:", e); }
+        }
+      } else if (sig.type === "ice") {
+        const pc = globalPeerConns.current[sig.fromEmail] || peerConnections[sig.fromEmail];
+        if (pc && pc.remoteDescription) {
+          pc.addIceCandidate(new RTCIceCandidate(sig.data)).catch(() => {});
+        }
+      }
+    }
+  };
+
+  const t = setInterval(pollAnswers, 800);
+  return () => clearInterval(t);
+}, [globalCall?.type, globalCall?.callId]);  
+const globalLocalStreamRef = useRef(null);
+const globalPeerConns = useRef({});
+
+const handleGlobalAcceptCall = async () => {
   if (!globalCall) return;
+  const callType = globalCall.callType || "voice";
+  const callId = globalCall.callId;
+  const callerEmail = globalCall.callerEmail;
+
+  // Get media
+  try {
+    const constraints = callType === "video" ? { audio: true, video: true } : { audio: true, video: false };
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    globalLocalStreamRef.current = stream;
+  } catch (e) {
+    alert("Could not access microphone" + (callType === "video" ? "/camera" : "") + ". Please check permissions.");
+    return;
+  }
+
+  // Update call status
   const calls = store.get("ulx_calls") || {};
   if (calls[user.email]) calls[user.email].status = "active";
   store.set("ulx_calls", calls);
-  setGlobalCall(prev => ({ ...prev, type: "active" }));
+
+  // Read the offer signal
+  const signals = store.get(SIG_KEY) || [];
+  const offerSignal = signals.find(s => s.toEmail === user.email && s.callId === callId && s.type === "offer");
+
+  if (offerSignal) {
+    const pc = new RTCPeerConnection(ICE_SERVERS);
+    globalPeerConns.current[callerEmail] = pc;
+
+    if (globalLocalStreamRef.current) {
+      globalLocalStreamRef.current.getTracks().forEach(track => pc.addTrack(track, globalLocalStreamRef.current));
+    }
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate) sendSignal(user.email, callerEmail, callId, "ice", e.candidate);
+    };
+
+    pc.ontrack = (e) => {
+      if (!e.streams || !e.streams[0]) return;
+      setGlobalCall(prev => {
+        if (!prev) return prev;
+        const streams = { ...(prev.remoteStreams || {}) };
+        streams[callerEmail] = e.streams[0];
+        return { ...prev, type: "active", remoteStreams: streams };
+      });
+    };
+
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(offerSignal.data.sdp));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      sendSignal(user.email, callerEmail, callId, "answer", { sdp: answer });
+
+      // Add any buffered ICE candidates
+      signals.filter(s => s.type === "ice" && s.fromEmail === callerEmail && s.callId === callId).forEach(s => {
+        pc.addIceCandidate(new RTCIceCandidate(s.data)).catch(() => {});
+      });
+    } catch (e) {
+      console.error("Global accept WebRTC error:", e);
+    }
+
+    // Notify caller that we accepted
+    const updatedCalls = store.get("ulx_calls") || {};
+    if (updatedCalls[`outgoing_${callerEmail}`]) {
+      updatedCalls[`outgoing_${callerEmail}`].status = "active";
+      updatedCalls[`outgoing_${callerEmail}`].acceptedBy = user.email;
+      updatedCalls[`outgoing_${callerEmail}`].acceptedAt = Date.now();
+      store.set("ulx_calls", updatedCalls);
+    }
+  }
+
+  setGlobalCall(prev => ({ ...prev, type: "active", startedAt: Date.now() }));
 };
 
 const handleGlobalEndCall = () => {
-  const calls = store.get("ulx_calls") || {};
+  if (!globalCall) return;
   const callerEmail = globalCall?.callerEmail;
-  // Mark as declined so caller detects it
-  if (calls[user.email]) {
-    calls[user.email].status = "declined";
+  const callId = globalCall?.callId;
+  const calls = store.get("ulx_calls") || {};
+
+  if (globalCall.type === "incoming" || globalCall.type === "active") {
+    // Rejecting or ending — mark as declined for the caller
+    if (calls[user.email]) {
+      calls[user.email].status = "declined";
+    }
+    if (callerEmail && calls[`outgoing_${callerEmail}`]) {
+      calls[`outgoing_${callerEmail}`].status = "declined";
+    }
     store.set("ulx_calls", calls);
-  }
-  if (callerEmail && calls[`outgoing_${callerEmail}`]) {
-    calls[`outgoing_${callerEmail}`].status = "declined";
+
+    setTimeout(() => {
+      const c2 = store.get("ulx_calls") || {};
+      delete c2[user.email];
+      if (callerEmail) delete c2[`outgoing_${callerEmail}`];
+      store.set("ulx_calls", c2);
+    }, 2000);
+  } else if (globalCall.type === "outgoing") {
+    // Caller cancels before pickup
+    const targets = globalCall.targets || (globalCall.target ? [globalCall.target] : []);
+    targets.forEach(em => {
+      if (calls[em] && calls[em].status === "ringing") {
+        calls[em].status = "cancelled";
+      }
+    });
+    delete calls[`outgoing_${user.email}`];
     store.set("ulx_calls", calls);
+
+    setTimeout(() => {
+      const c2 = store.get("ulx_calls") || {};
+      targets.forEach(em => delete c2[em]);
+      store.set("ulx_calls", c2);
+    }, 2000);
   }
-  setTimeout(() => {
-    const c2 = store.get("ulx_calls") || {};
-    delete c2[user.email];
-    if (callerEmail) delete c2[`outgoing_${callerEmail}`];
-    store.set("ulx_calls", c2);
-  }, 2000);
+
+  // Stop local stream from global handler
+  if (globalLocalStreamRef.current) {
+    globalLocalStreamRef.current.getTracks().forEach(t => t.stop());
+    globalLocalStreamRef.current = null;
+  }
+  // Close peer connections from global handler
+  Object.values(globalPeerConns.current).forEach(pc => pc.close());
+  globalPeerConns.current = {};
+
   setGlobalCall(null);
 };
 
@@ -14410,7 +14595,7 @@ resetInactivity();
         case "meetings":
         return <Meetings user={user} />;
       case "activity":
-        return <ActivityChat user={user} />;
+        return <ActivityChat user={user} setGlobalCall={setGlobalCall} />;
       case "ai":
         return <AIInsights user={user} />;
         case "issues":
@@ -14490,18 +14675,20 @@ resetInactivity();
       {showNotif && (
         <NotifPanel user={user} onClose={() => setShowNotif(false)} />
       )}
-      {globalCall && view !== "activity" && (
+     {globalCall && (
   <div style={{
     position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)",
     zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center",
     backdropFilter: "blur(8px)",
   }}>
     <div style={{
-      width: 340, background: "#111118", border: `1px solid ${BORDER}`,
+      width: globalCall.type === "active" && globalCall.callType === "video" ? 520 : 340,
+      background: "#111118", border: `1px solid ${BORDER}`,
       borderRadius: 20, padding: "36px 28px", textAlign: "center",
       boxShadow: "0 40px 80px rgba(0,0,0,0.6)",
+      transition: "width 0.3s ease",
     }}>
-      {globalCall.type === "incoming" ? (
+      {globalCall.type === "incoming" && (
         <>
           <div style={{ fontSize: 48, marginBottom: 12, animation: "pulse 1s infinite" }}>
             {globalCall.callType === "video" ? "🎥" : "📞"}
@@ -14509,34 +14696,75 @@ resetInactivity();
           <div style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", marginBottom: 6, fontFamily: "'DM Mono',monospace" }}>
             INCOMING {globalCall.callType?.toUpperCase()} CALL
           </div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 24 }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 4 }}>
             {globalCall.callerName || globalCall.callerEmail}
-            {globalCall.isGroup && <div style={{ fontSize: 13, color: PURPLE, fontWeight: 400, marginTop: 4 }}>Group: {globalCall.groupName}</div>}
           </div>
+          {globalCall.isGroup && (
+            <div style={{ fontSize: 13, color: PURPLE, marginBottom: 16 }}>Group: {globalCall.groupName}</div>
+          )}
+          <div style={{ marginBottom: 24 }} />
           <div style={{ display: "flex", gap: 14, justifyContent: "center" }}>
             <button onClick={handleGlobalEndCall} style={{ width: 56, height: 56, borderRadius: "50%", background: RED, border: "none", fontSize: 22, cursor: "pointer" }}>✕</button>
             <button onClick={handleGlobalAcceptCall} style={{ width: 56, height: 56, borderRadius: "50%", background: TEAL, border: "none", fontSize: 22, cursor: "pointer" }}>✓</button>
           </div>
           <div style={{ marginTop: 16, fontSize: 11, color: "rgba(255,255,255,0.25)", fontFamily: "'DM Mono',monospace" }}>TAP ✓ TO ACCEPT · ✕ TO DECLINE</div>
         </>
-      ) : globalCall.type === "active" ? (
+      )}
+
+      {globalCall.type === "outgoing" && (
         <>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>
+          <div style={{ fontSize: 48, marginBottom: 12, animation: "pulse 1.5s infinite" }}>
             {globalCall.callType === "video" ? "🎥" : "📞"}
           </div>
-          <div style={{ fontSize: 13, color: TEAL, marginBottom: 6, fontFamily: "'DM Mono',monospace" }}>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", marginBottom: 6, fontFamily: "'DM Mono',monospace" }}>CALLING…</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 8 }}>{globalCall.targetName}</div>
+          <div style={{ width: 36, height: 36, borderRadius: "50%", border: `3px solid ${GOLD}44`, borderTop: `3px solid ${GOLD}`, animation: "spin 1s linear infinite", margin: "16px auto 24px" }} />
+          <Btn variant="danger" onClick={handleGlobalEndCall} style={{ width: "100%", padding: "11px" }}>Cancel Call</Btn>
+        </>
+      )}
+
+      {globalCall.type === "active" && (
+        <>
+          {globalCall.callType === "video" && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ position: "relative", background: "#000", borderRadius: 12, overflow: "hidden", marginBottom: 8, height: 240 }}>
+                {globalCall.remoteStreams && Object.entries(globalCall.remoteStreams).map(([em, stream]) => (
+                  <video key={em} autoPlay playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    ref={el => { if (el && stream) el.srcObject = stream; }} />
+                ))}
+                {(!globalCall.remoteStreams || Object.keys(globalCall.remoteStreams).length === 0) && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "rgba(255,255,255,0.3)", fontSize: 13 }}>
+                    Connecting video…
+                  </div>
+                )}
+                <video autoPlay playsInline muted
+                  style={{ position: "absolute", bottom: 8, right: 8, width: 100, height: 70, objectFit: "cover", borderRadius: 6, border: `2px solid ${GOLD}`, background: "#000" }}
+                  ref={el => { if (el && globalLocalStreamRef.current) el.srcObject = globalLocalStreamRef.current; }} />
+              </div>
+              {globalCall.remoteStreams && Object.entries(globalCall.remoteStreams).map(([em, stream]) => (
+                <audio key={`audio-${em}`} autoPlay ref={el => { if (el && stream) el.srcObject = stream; }} style={{ display: "none" }} />
+              ))}
+            </div>
+          )}
+          {globalCall.callType !== "video" && globalCall.remoteStreams && Object.entries(globalCall.remoteStreams).map(([em, stream]) => (
+            <audio key={em} autoPlay ref={el => { if (el && stream) el.srcObject = stream; }} style={{ display: "none" }} />
+          ))}
+          <div style={{ fontSize: 48, marginBottom: 8 }}>
+            {globalCall.callType === "video" ? "🎥" : "📞"}
+          </div>
+          <div style={{ fontSize: 13, color: TEAL, marginBottom: 4, fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em" }}>
             {globalCall.callType?.toUpperCase()} CALL CONNECTED
           </div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 8 }}>
-            {globalCall.callerName || globalCall.callerEmail}
+          <div style={{ fontSize: 16, fontWeight: 800, color: "#fff", marginBottom: 8 }}>
+            {globalCall.callerName || globalCall.callerEmail || globalCall.targetName}
           </div>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px", background: TEAL + "22", border: `1px solid ${TEAL}44`, borderRadius: 20, marginBottom: 20 }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: TEAL, animation: "pulse 1.5s infinite" }} />
-            <span style={{ fontSize: 10, color: TEAL, fontFamily: "'DM Mono',monospace" }}>LIVE — BOTH ENDS CONNECTED</span>
+            <span style={{ fontSize: 10, color: TEAL, fontFamily: "'DM Mono',monospace" }}>LIVE — CONNECTED</span>
           </div>
           <Btn variant="danger" onClick={handleGlobalEndCall} style={{ width: "100%", padding: "11px" }}>End Call</Btn>
         </>
-      ) : null}
+      )}
     </div>
   </div>
 )}
