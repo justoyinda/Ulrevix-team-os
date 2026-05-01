@@ -330,23 +330,26 @@ async function sendSignal(fromEmail, toEmail, callId, type, data) {
 }
 
 async function readSignals(forEmail, callId, afterTimestamp = 0) {
-  // Read from Supabase first (cross-device)
-  const { data } = await supabase
-    .from("call_signals")
-    .select("*")
-    .eq("to_email", forEmail)
-    .eq("call_id", callId)
-    .gt("created_at", afterTimestamp);
-  if (data && data.length > 0) {
-    return data.map(s => ({
-      id: s.id,
-      fromEmail: s.from_email,
-      toEmail: s.to_email,
-      callId: s.call_id,
-      type: s.type,
-      data: s.data,
-      createdAt: s.created_at,
-    }));
+  try {
+    const { data, error } = await supabase
+      .from("call_signals")
+      .select("*")
+      .eq("to_email", forEmail)
+      .eq("call_id", callId)
+      .gt("created_at", afterTimestamp);
+    if (!error && data && Array.isArray(data) && data.length > 0) {
+      return data.map(s => ({
+        id: s.id,
+        fromEmail: s.from_email,
+        toEmail: s.to_email,
+        callId: s.call_id,
+        type: s.type,
+        data: s.data,
+        createdAt: s.created_at,
+      }));
+    }
+  } catch (e) {
+    console.error("readSignals error:", e);
   }
   // Fallback to localStorage
   const signals = store.get(SIG_KEY) || [];
@@ -6897,8 +6900,8 @@ const ActivityChat = ({ user, setGlobalCall = () => {} }) => {
     let signalTimestamp = Date.now() - 5000;
   
     const pollSignals = async () => {
-      const signals = readSignals(user.email, callId, signalTimestamp);
-      if (signals.length === 0) return;
+      const signals = await readSignals(user.email, callId, signalTimestamp);
+      if (!Array.isArray(signals) || signals.length === 0) return;
       signalTimestamp = Math.max(...signals.map(s => s.createdAt));
   
       for (const sig of signals) {
@@ -14304,8 +14307,8 @@ const handleGlobalAcceptCall = async () => {
   store.set("ulx_calls", calls);
 
   // Read the offer signal
-  const signals = store.get(SIG_KEY) || [];
-  const offerSignal = signals.find(s => s.toEmail === user.email && s.callId === callId && s.type === "offer");
+  const signals = await readSignals(user.email, callId, 0);
+  const offerSignal = Array.isArray(signals) ? signals.find(s => s.type === "offer") : null;
 
   if (offerSignal) {
     const pc = new RTCPeerConnection(ICE_SERVERS);
@@ -14336,9 +14339,11 @@ const handleGlobalAcceptCall = async () => {
       sendSignal(user.email, callerEmail, callId, "answer", { sdp: answer });
 
       // Add any buffered ICE candidates
-      signals.filter(s => s.type === "ice" && s.fromEmail === callerEmail && s.callId === callId).forEach(s => {
-        pc.addIceCandidate(new RTCIceCandidate(s.data)).catch(() => {});
-      });
+      if (Array.isArray(signals)) {
+        signals.filter(s => s.type === "ice" && s.fromEmail === callerEmail).forEach(s => {
+          pc.addIceCandidate(new RTCIceCandidate(s.data)).catch(() => {});
+        });
+      }
     } catch (e) {
       console.error("Global accept WebRTC error:", e);
     }
