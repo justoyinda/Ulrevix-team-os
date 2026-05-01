@@ -5618,7 +5618,34 @@ const Team = ({ user }) => {
   const allProjects = store.get(KEYS.projects) || [];
 
   useEffect(() => {
-    setUsers(store.get(KEYS.users) || {});
+    const loadTeam = async () => {
+      // Always fetch fresh from Supabase so deleted users never reappear
+      const { data: pdUsers } = await supabase
+        .from("platform_data")
+        .select("value")
+        .eq("key", "ulx_users")
+        .maybeSingle();
+      const freshUsers = pdUsers?.value || store.get(KEYS.users) || {};
+
+      // Also fetch blocked list to filter out deleted/blocked users
+      const { data: pdBlocked } = await supabase
+        .from("platform_data")
+        .select("value")
+        .eq("key", "ulx_blocked_emails")
+        .maybeSingle();
+      const blockedList = Array.isArray(pdBlocked?.value)
+        ? pdBlocked.value
+        : (store.get(KEYS.blockedEmails) || []);
+
+      // Remove blocked/deleted users from the display
+      const filteredUsers = Object.fromEntries(
+        Object.entries(freshUsers).filter(([em]) => !blockedList.includes(em))
+      );
+
+      store.set(KEYS.users, filteredUsers);
+      setUsers(filteredUsers);
+    };
+    loadTeam();
   }, []);
 
   const allTasks = allProjects.flatMap((p) => p.tasks || []);
@@ -11611,25 +11638,55 @@ const [confTab, setConfTab] = useState("view");
     load();
   };
 
-  const deleteUserAccount = (em) => {
+const deleteUserAccount = async (em) => {
     if (em === ADMIN_EMAIL) return;
-    // Remove from passwords
+
+    // Remove from passwords locally and in Supabase
     const pws = store.get(KEYS.passwords) || {};
     delete pws[em];
     store.set(KEYS.passwords, pws);
-    // Delete the user record entirely
+    await sbAuth.deletePassword(em);
+
+    // Delete the user record entirely from localStorage and Supabase
     const users = store.get(KEYS.users) || {};
     delete users[em];
     store.set(KEYS.users, users);
+    await sbAuth.setUser(em, null);
+    // Also delete from Supabase users table directly
+    await supabase.from("users").delete().eq("email", em);
+    // Sync the updated users object to platform_data
+    await supabase.from("platform_data").upsert(
+      { key: "ulx_users", value: users, updated_at: new Date().toISOString() },
+      { onConflict: "key" }
+    );
+
     // Remove from pendingEmails
     const existing = store.get(KEYS.pendingEmails) || [];
-    store.set(KEYS.pendingEmails, existing.filter((x) => x !== em));
+    const newPending = existing.filter((x) => x !== em);
+    store.set(KEYS.pendingEmails, newPending);
+    await supabase.from("platform_data").upsert(
+      { key: "ulx_pending_emails", value: newPending, updated_at: new Date().toISOString() },
+      { onConflict: "key" }
+    );
+    // Also remove from Supabase pending_emails table
+    await supabase.from("pending_emails").delete().eq("email", em);
+
     // Add to blocked list
     const blocked = store.get(KEYS.blockedEmails) || [];
     if (!blocked.includes(em)) {
       blocked.push(em);
       store.set(KEYS.blockedEmails, blocked);
+      await supabase.from("platform_data").upsert(
+        { key: "ulx_blocked_emails", value: blocked, updated_at: new Date().toISOString() },
+        { onConflict: "key" }
+      );
+      // Also add to Supabase blocked_emails table
+      await supabase.from("blocked_emails").upsert(
+        { email: em, blocked_by: user.email },
+        { onConflict: "email" }
+      );
     }
+
     // Log to email history
     const hist = store.get(KEYS.emailHistory) || [];
     hist.unshift({
@@ -11639,6 +11696,11 @@ const [confTab, setConfTab] = useState("view");
       at: new Date().toISOString(),
     });
     store.set(KEYS.emailHistory, hist);
+    await supabase.from("platform_data").upsert(
+      { key: "ulx_email_history", value: hist, updated_at: new Date().toISOString() },
+      { onConflict: "key" }
+    );
+
     addActivity(user.email, "permanently deleted account of", em, null);
     load();
   };
