@@ -309,18 +309,46 @@ function closePeerConnections() {
 
 const SIG_KEY = "ulx_webrtc_signals";
 
-function sendSignal(fromEmail, toEmail, callId, type, data) {
+async function sendSignal(fromEmail, toEmail, callId, type, data) {
+  const id = Date.now().toString() + Math.random().toString(36).slice(2);
+  const createdAt = Date.now();
+  // Write to localStorage as fallback
   const signals = store.get(SIG_KEY) || [];
-  signals.push({
-    id: Date.now().toString() + Math.random(),
-    fromEmail, toEmail, callId, type, data,
-    createdAt: Date.now(),
-  });
+  signals.push({ id, fromEmail, toEmail, callId, type, data, createdAt });
   const cutoff = Date.now() - 5 * 60 * 1000;
   store.set(SIG_KEY, signals.filter(s => s.createdAt > cutoff));
+  // Write to Supabase so other devices can receive it
+  await supabase.from("call_signals").insert({
+    id,
+    from_email: fromEmail,
+    to_email: toEmail,
+    call_id: callId,
+    type,
+    data,
+    created_at: createdAt,
+  });
 }
 
-function readSignals(forEmail, callId, afterTimestamp = 0) {
+async function readSignals(forEmail, callId, afterTimestamp = 0) {
+  // Read from Supabase first (cross-device)
+  const { data } = await supabase
+    .from("call_signals")
+    .select("*")
+    .eq("to_email", forEmail)
+    .eq("call_id", callId)
+    .gt("created_at", afterTimestamp);
+  if (data && data.length > 0) {
+    return data.map(s => ({
+      id: s.id,
+      fromEmail: s.from_email,
+      toEmail: s.to_email,
+      callId: s.call_id,
+      type: s.type,
+      data: s.data,
+      createdAt: s.created_at,
+    }));
+  }
+  // Fallback to localStorage
   const signals = store.get(SIG_KEY) || [];
   return signals.filter(s => s.toEmail === forEmail && s.callId === callId && s.createdAt > afterTimestamp);
 }
@@ -7211,6 +7239,11 @@ const ActivityChat = ({ user, setGlobalCall = () => {} }) => {
     });
     calls[`outgoing_${user.email}`] = { callId, targets, callType, isGroup, groupId, status: "ringing", startedAt: Date.now() };
     store.set("ulx_calls", calls);
+    // Sync to Supabase so callee sees it on their device
+    await supabase.from("platform_data").upsert(
+      { key: "ulx_calls", value: calls, updated_at: new Date().toISOString() },
+      { onConflict: "key" }
+    );
   
     setActiveCall({
       type: "outgoing",
@@ -14124,58 +14157,79 @@ export default function Home() {
 
 useEffect(() => {
   if (!user) return;
-  const pollGlobalCalls = () => {
-    const calls = store.get("ulx_calls") || {};
+
+  // Poll Supabase for call state every 2 seconds
+  const pollGlobalCalls = async () => {
+    const { data } = await supabase
+      .from("platform_data")
+      .select("value")
+      .eq("key", "ulx_calls")
+      .maybeSingle();
+
+    const calls = data?.value || store.get("ulx_calls") || {};
+    // Also update localStorage so other functions can read it
+    if (data?.value) store.set("ulx_calls", data.value);
+
     const myCall = calls[user.email];
 
     setGlobalCall(prev => {
-      // Incoming ringing call for me (I am not the caller)
+      // Incoming ringing call
       if (myCall && myCall.status === "ringing" && myCall.callerEmail !== user.email) {
+        if (prev && prev.callId === myCall.callId && prev.type !== "incoming") return prev;
         if (prev && prev.callId === myCall.callId) return prev;
         return { type: "incoming", ...myCall };
       }
 
-      // I am the caller — check my outgoing entry
+      // I am the caller — check outgoing
       const outgoing = calls[`outgoing_${user.email}`];
-      if (outgoing) {
-        if (prev && prev.type === "outgoing" && prev.callId === outgoing.callId) {
-          // Check if callee accepted
-          if (outgoing.status === "active" && outgoing.acceptedBy) {
-            return { ...prev, type: "active" };
-          }
-          // Check if declined
-          if (outgoing.status === "declined") {
-            // Clean up
-            const c2 = store.get("ulx_calls") || {};
-            delete c2[`outgoing_${user.email}`];
-            store.set("ulx_calls", c2);
-            stopLocalStream();
-            closePeerConnections();
-            return null;
-          }
-          return prev;
+      if (prev && prev.type === "outgoing") {
+        if (!outgoing) { stopLocalStream(); closePeerConnections(); return null; }
+        if (outgoing.status === "declined") { stopLocalStream(); closePeerConnections(); return null; }
+        if (outgoing.status === "active" && outgoing.acceptedBy) {
+          return { ...prev, type: "active" };
         }
         return prev;
       }
 
-      // My incoming call was cancelled or declined
+      // Incoming call was cancelled
       if (prev && prev.type === "incoming") {
         if (!myCall || myCall.callId !== prev.callId) return null;
         if (myCall.status === "cancelled" || myCall.status === "declined") return null;
       }
 
-      // Active call — check if other party ended it
+      // Active call ended by other party
       if (prev && prev.type === "active") {
-        const stillActive = calls[`outgoing_${user.email}`] || calls[user.email];
-        if (!stillActive) return null;
+        const outgoing2 = calls[`outgoing_${user.email}`];
+        const incoming2 = calls[user.email];
+        if (!outgoing2 && !incoming2) { stopLocalStream(); closePeerConnections(); return null; }
       }
 
       return prev;
     });
   };
+
   pollGlobalCalls();
-  const t = setInterval(pollGlobalCalls, 1500);
-  return () => clearInterval(t);
+  const t = setInterval(pollGlobalCalls, 2000);
+
+  // Also subscribe to Supabase Realtime for instant updates
+  const channel = supabase
+    .channel("call_state_" + user.email)
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "platform_data", filter: "key=eq.ulx_calls" },
+      (payload) => {
+        if (payload.new?.value) {
+          store.set("ulx_calls", payload.new.value);
+          pollGlobalCalls();
+        }
+      }
+    )
+    .subscribe();
+
+  return () => {
+    clearInterval(t);
+    supabase.removeChannel(channel);
+  };
 }, [user]);
 
 useEffect(() => {
@@ -14296,6 +14350,11 @@ const handleGlobalAcceptCall = async () => {
       updatedCalls[`outgoing_${callerEmail}`].acceptedBy = user.email;
       updatedCalls[`outgoing_${callerEmail}`].acceptedAt = Date.now();
       store.set("ulx_calls", updatedCalls);
+      // Push to Supabase so caller sees acceptance on their device
+      await supabase.from("platform_data").upsert(
+        { key: "ulx_calls", value: updatedCalls, updated_at: new Date().toISOString() },
+        { onConflict: "key" }
+      );
     }
   }
 
@@ -14317,6 +14376,10 @@ const handleGlobalEndCall = () => {
       calls[`outgoing_${callerEmail}`].status = "declined";
     }
     store.set("ulx_calls", calls);
+    supabase.from("platform_data").upsert(
+      { key: "ulx_calls", value: calls, updated_at: new Date().toISOString() },
+      { onConflict: "key" }
+    );
 
     setTimeout(() => {
       const c2 = store.get("ulx_calls") || {};
@@ -14334,6 +14397,10 @@ const handleGlobalEndCall = () => {
     });
     delete calls[`outgoing_${user.email}`];
     store.set("ulx_calls", calls);
+    supabase.from("platform_data").upsert(
+      { key: "ulx_calls", value: calls, updated_at: new Date().toISOString() },
+      { onConflict: "key" }
+    );
 
     setTimeout(() => {
       const c2 = store.get("ulx_calls") || {};
@@ -14351,6 +14418,10 @@ const handleGlobalEndCall = () => {
   Object.values(globalPeerConns.current).forEach(pc => pc.close());
   globalPeerConns.current = {};
 
+  // Clean up call signals from Supabase
+  if (globalCall?.callId) {
+    supabase.from("call_signals").delete().eq("call_id", globalCall.callId);
+  }
   setGlobalCall(null);
 };
 
