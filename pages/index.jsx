@@ -1670,7 +1670,8 @@ const Auth = ({ onLogin }) => {
         const adminRoleEmails = emailHistory.filter(h => h.action === "authorized" && h.role === "admin").map(h => h.email);
         const allAdminEmails = [...new Set([ADMIN_EMAIL, ...adminRoleEmails])];
         const colorIndex = Object.keys(allUsers).length % COLORS.length;
-        userRecord = { email: em, name: em.split("@")[0], role: allAdminEmails.includes(em) ? "admin" : "member", color: COLORS[colorIndex], dept: "", title: "", status: "", team: "", registered_at: new Date().toISOString() };
+        const registeredAt = new Date().toISOString();
+        userRecord = { email: em, name: em.split("@")[0], role: allAdminEmails.includes(em) ? "admin" : "member", color: COLORS[colorIndex], dept: "", title: "", status: "", team: "", registeredAt, registered_at: registeredAt };
         await sbAuth.setUser(em, userRecord);
       }
       addActivity(em, "joined the platform", "", null);
@@ -10538,9 +10539,40 @@ const Profile = ({ user, onUserUpdate }) => {
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState({});
 
-  const load = () => {
-    const users = store.get(KEYS.users) || {};
-    const me = users[user.email] || {};
+  const load = async () => {
+    const { data: pdUsers } = await supabase
+      .from("platform_data")
+      .select("value")
+      .eq("key", "ulx_users")
+      .maybeSingle();
+    const users = pdUsers?.value || store.get(KEYS.users) || {};
+    let me = users[user.email] || {};
+
+    // If registeredAt is missing, try to get it from email history
+    if (!me.registeredAt && !me.registered_at) {
+      const { data: pdHistory } = await supabase
+        .from("platform_data")
+        .select("value")
+        .eq("key", "ulx_email_history")
+        .maybeSingle();
+      const history = Array.isArray(pdHistory?.value) ? pdHistory.value : [];
+      const myEntry = history
+        .filter(h => h.email === user.email && h.action === "authorized")
+        .sort((a, b) => new Date(a.at) - new Date(b.at))[0];
+      if (myEntry) {
+        me = { ...me, registeredAt: myEntry.at };
+      }
+      // Also try the Supabase users table directly
+      const { data: userRow } = await supabase
+        .from("users")
+        .select("*")
+        .eq("email", user.email)
+        .maybeSingle();
+      if (userRow?.registered_at) {
+        me = { ...me, registeredAt: userRow.registered_at };
+      }
+    }
+
     setProfile(me);
     setForm({
       name: me.name || "",
@@ -10675,19 +10707,23 @@ const Profile = ({ user, onUserUpdate }) => {
           }}
         >
           {[
-            ["Name", profile.name || "—"],
-            ["Email", user.email],
-            ["Department", profile.dept || "—"],
-            ["Team", profile.team || "—"],
-            ["Title / Role", profile.title || "—"],
-            ["Status", profile.status || "—"],
-            [
-              "Member Since",
-              profile.registeredAt
-                ? new Date(profile.registeredAt).toLocaleDateString()
-                : "—",
-            ],
-          ].map(([k, v]) => (
+      ["Name", profile.name || "—"],
+      ["Email", user.email],
+      ["Department", profile.dept || "—"],
+      ["Team", profile.team || "—"],
+      ["Title / Role", profile.title || "—"],
+      ["Status", profile.status || "—"],
+      [
+        "Member Since",
+        profile.registeredAt || profile.registered_at
+          ? new Date(profile.registeredAt || profile.registered_at).toLocaleDateString("en-GB", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            })
+          : "—",
+      ],
+    ].map(([k, v]) => (
             <div
               key={k}
               style={{
