@@ -4020,8 +4020,26 @@ const TaskUploadSection = ({ projectId, taskId, taskTitle, uploaderEmail, allUse
 const [showLinkInput, setShowLinkInput] = useState(false);
 
   const load = async () => {
-    const u = await getTaskUploads(projectId, taskId);
-    setUploads(u);
+    try {
+      // Always fetch from Supabase directly so new devices see all uploads
+      const key = `${KEYS.taskUploads}_${projectId}_${taskId}`;
+      const { data } = await supabase
+        .from("platform_data")
+        .select("value")
+        .eq("key", key)
+        .maybeSingle();
+      if (data?.value && Array.isArray(data.value)) {
+        localStorage.setItem(key, JSON.stringify(data.value));
+        setUploads(data.value);
+      } else {
+        // Fallback to localStorage or getTaskUploads
+        const u = await getTaskUploads(projectId, taskId);
+        setUploads(u);
+      }
+    } catch (e) {
+      const u = await getTaskUploads(projectId, taskId);
+      setUploads(u);
+    }
   };
 
   useEffect(() => { load(); }, [projectId, taskId]);
@@ -4114,9 +4132,7 @@ if (file.size > MAX_DIRECT) {
       const reviewKey = `${KEYS.taskUploadReviews}_${projectId}_${taskId}_${u.id}`;
       const reviewData = store.get(reviewKey);
       const uploadStatus = reviewData?.status || "pending";
-      const isUploader = u.uploadedBy === uploaderEmail;
-      const isAdmin = viewerRole === "admin";
-      const canSeeUpload = isUploader || isAdmin || uploadStatus === "approved";
+      const canSeeUpload = uploadStatus === "approved" || viewerRole === "admin" || u.uploadedBy === uploaderEmail;
       if (!canSeeUpload) return null;
       return (
         <div key={u.id} style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${uploadStatus === "approved" ? TEAL + "44" : uploadStatus === "rejected" ? RED + "44" : BORDER}`, borderRadius: 6, padding: "8px 12px" }}>
@@ -14870,22 +14886,12 @@ if (platformData && platformData.length > 0) {
   });
 }
 
-// Pull dynamic upload and review keys
-const { data: uploadData } = await supabase
+// Pull ALL dynamic keys including uploads and reviews
+const { data: allDynamicData } = await supabase
   .from("platform_data")
-  .select("key, value")
-  .like("key", "ulx_task_uploads_%");
-if (uploadData) {
-  uploadData.forEach(({ key, value }) => {
-    localStorage.setItem(key, JSON.stringify(value));
-  });
-}
-const { data: reviewData } = await supabase
-  .from("platform_data")
-  .select("key, value")
-  .like("key", "ulx_task_upload_reviews_%");
-if (reviewData) {
-  reviewData.forEach(({ key, value }) => {
+  .select("key, value");
+if (allDynamicData) {
+  allDynamicData.forEach(({ key, value }) => {
     localStorage.setItem(key, JSON.stringify(value));
   });
 }
