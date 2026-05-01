@@ -2009,7 +2009,7 @@ const TopBar = ({ title, user, onSignOut, notifCount, onNotif, timer }) => {
     : 0;
   const week = launchDate
     ? Math.floor(daysSinceLaunch / 7) + 1
-    : getWeekNum(now);
+    : 1;
 
   return (
     <div
@@ -14736,10 +14736,17 @@ const inactivityRef = useRef(null);
         <Auth
   onLogin={async (u) => {
     // Sync launch state from Supabase
-const { data: cfg } = await supabase.from("platform_config").select("launched, launch_date").single();
+const { data: cfgRows } = await supabase
+  .from("platform_config")
+  .select("launched, launch_date")
+  .eq("launched", true)
+  .limit(1);
+const cfg = cfgRows?.[0];
 if (cfg?.launched) {
   store.set(KEYS.launched, true);
-  if (cfg.launch_date) store.set(KEYS.launchDate, cfg.launch_date);
+  if (cfg.launch_date) {
+    store.set(KEYS.launchDate, cfg.launch_date);
+  }
 }
 
 // Pull ALL shared platform data from Supabase into localStorage
