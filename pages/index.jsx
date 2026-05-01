@@ -14950,15 +14950,58 @@ if (platformData && platformData.length > 0) {
   });
 }
 
-// Pull ALL dynamic keys including uploads and reviews
-const { data: allDynamicData } = await supabase
+// Pull only essential shared data immediately on login
+// Non-essential data like uploads loads lazily when needed
+const essentialKeys = [
+  "ulx_users", "ulx_pending_emails", "ulx_blocked_emails",
+  "ulx_email_history", "ulx_projects", "ulx_activity",
+  "ulx_weekly", "ulx_monthly", "ulx_messages", "ulx_groups",
+  "ulx_notifs", "ulx_meetings", "ulx_presence", "ulx_growth",
+  "ulx_performance_snapshots", "ulx_work_hours",
+  "ulx_confidentiality_agreement", "ulx_confidentiality_signed",
+  "ulx_about_sections", "ulx_role_clarity", "ulx_issues",
+  "ulx_pw_resets", "ulx_profile_requests", "ulx_weekly_rankings",
+  "ulx_monthly_rankings", "ulx_weekly_spotlights",
+  "ulx_launched", "ulx_launch_date",
+];
+
+const { data: essentialData } = await supabase
   .from("platform_data")
-  .select("key, value");
-if (allDynamicData) {
-  allDynamicData.forEach(({ key, value }) => {
+  .select("key, value")
+  .in("key", essentialKeys);
+
+if (essentialData) {
+  essentialData.forEach(({ key, value }) => {
     localStorage.setItem(key, JSON.stringify(value));
   });
 }
+
+// Load uploads and reviews in the background after login
+// so they do not block the user from getting in
+setTimeout(async () => {
+  try {
+    const { data: uploadData } = await supabase
+      .from("platform_data")
+      .select("key, value")
+      .like("key", "ulx_task_uploads_%");
+    if (uploadData) {
+      uploadData.forEach(({ key, value }) => {
+        localStorage.setItem(key, JSON.stringify(value));
+      });
+    }
+    const { data: reviewData } = await supabase
+      .from("platform_data")
+      .select("key, value")
+      .like("key", "ulx_task_upload_reviews_%");
+    if (reviewData) {
+      reviewData.forEach(({ key, value }) => {
+        localStorage.setItem(key, JSON.stringify(value));
+      });
+    }
+  } catch (e) {
+    console.error("Background sync error:", e);
+  }
+}, 3000);
 
 // Sync auth-specific tables (these live in dedicated Supabase tables, not platform_data)
 const allUsers = await sbAuth.getAllUsers();
