@@ -7240,11 +7240,26 @@ const ActivityChat = ({ user, setGlobalCall = () => {} }) => {
         startedAt: new Date().toISOString(),
       };
     });
-    calls[`outgoing_${user.email}`] = { callId, targets, callType, isGroup, groupId, status: "ringing", startedAt: Date.now() };
-    store.set("ulx_calls", calls);
-    // Sync to Supabase so callee sees it on their device
+    // Wipe ALL existing call entries first so stale data never interferes
+    const freshCalls = {};
+    targets.forEach(em => {
+      freshCalls[em] = {
+        callId,
+        callerEmail: user.email,
+        callerName,
+        callType,
+        isGroup,
+        groupId,
+        groupName: isGroup ? groups.find(g => g.id === groupId)?.name : null,
+        target: em,
+        status: "ringing",
+        startedAt: new Date().toISOString(),
+      };
+    });
+    freshCalls[`outgoing_${user.email}`] = { callId, targets, callType, isGroup, groupId, status: "ringing", startedAt: Date.now() };
+    store.set("ulx_calls", freshCalls);
     await supabase.from("platform_data").upsert(
-      { key: "ulx_calls", value: calls, updated_at: new Date().toISOString() },
+      { key: "ulx_calls", value: freshCalls, updated_at: new Date().toISOString() },
       { onConflict: "key" }
     );
   
@@ -14200,13 +14215,26 @@ useEffect(() => {
         if (myCall.status === "cancelled" || myCall.status === "declined") return null;
       }
 
+      // If ulx_calls is completely empty, all calls are ended
+      if (Object.keys(calls).length === 0 && prev) {
+        stopLocalStream();
+        closePeerConnections();
+        return null;
+      }
+
       // Active call ended by other party
       if (prev && prev.type === "active") {
         const outgoing2 = calls[`outgoing_${user.email}`];
         const incoming2 = calls[user.email];
-        // Call ended if both entries gone OR either marked declined/cancelled
         const myEntry = outgoing2 || incoming2;
+        // No entry for me at all — call ended
         if (!myEntry) {
+          stopLocalStream();
+          closePeerConnections();
+          return null;
+        }
+        // Entry exists but for a different call — old stale data, ignore it
+        if (myEntry.callId !== prev.callId) {
           stopLocalStream();
           closePeerConnections();
           return null;
@@ -14216,23 +14244,34 @@ useEffect(() => {
           closePeerConnections();
           return null;
         }
-        // Also check by callId — if our callId entry is gone or ended
-        const callStillActive = Object.values(calls).some(
-          c => c?.callId === prev.callId && c?.status !== "declined" && c?.status !== "cancelled"
-        );
-        if (!callStillActive) {
+      }
+
+      // Outgoing call — callee rejected or call disappeared
+      if (prev && prev.type === "outgoing") {
+        const outgoing2 = calls[`outgoing_${user.email}`];
+        if (!outgoing2) {
+          stopLocalStream();
+          closePeerConnections();
+          return null;
+        }
+        if (outgoing2.callId !== prev.callId) {
+          stopLocalStream();
+          closePeerConnections();
+          return null;
+        }
+        if (outgoing2.status === "declined" || outgoing2.status === "cancelled") {
           stopLocalStream();
           closePeerConnections();
           return null;
         }
       }
 
-      // Incoming call rejected by us already or cancelled by caller
+      // Incoming call — cancelled by caller or rejected
       if (prev && prev.type === "incoming") {
         const myEntry = calls[user.email];
         if (!myEntry) return null;
-        if (myEntry.status === "cancelled" || myEntry.status === "declined") return null;
         if (myEntry.callId !== prev.callId) return null;
+        if (myEntry.status === "cancelled" || myEntry.status === "declined") return null;
       }
 
       return prev;
@@ -14394,92 +14433,32 @@ const handleGlobalAcceptCall = async () => {
   setGlobalCall(prev => ({ ...prev, type: "active", startedAt: Date.now() }));
 };
 
-const handleGlobalEndCall = () => {
+const handleGlobalEndCall = async () => {
   if (!globalCall) return;
-  const callerEmail = globalCall?.callerEmail;
-  const callId = globalCall?.callId;
-  const calls = store.get("ulx_calls") || {};
 
-  if (globalCall.type === "incoming" || globalCall.type === "active") {
-    // Rejecting or ending — mark as declined/ended for ALL parties
-    if (calls[user.email]) {
-      calls[user.email].status = "declined";
-    }
-    if (callerEmail && calls[`outgoing_${callerEmail}`]) {
-      calls[`outgoing_${callerEmail}`].status = "declined";
-    }
-    // If this was an active call, also clear the callee's entry
-    // so the other party's portal detects the call ended
-    const allCallKeys = Object.keys(calls);
-    allCallKeys.forEach(k => {
-      if (calls[k]?.callId === globalCall.callId) {
-        calls[k].status = "declined";
-      }
-    });
-    store.set("ulx_calls", calls);
-    // Push to Supabase immediately so other device sees it
-    supabase.from("platform_data").upsert(
-      { key: "ulx_calls", value: calls, updated_at: new Date().toISOString() },
-      { onConflict: "key" }
-    );
+  // Wipe the entire ulx_calls object in both localStorage and Supabase
+  // This is the most reliable way to end calls across all devices
+  store.set("ulx_calls", {});
+  await supabase.from("platform_data").upsert(
+    { key: "ulx_calls", value: {}, updated_at: new Date().toISOString() },
+    { onConflict: "key" }
+  );
 
-    setTimeout(() => {
-      const c2 = store.get("ulx_calls") || {};
-      // Delete ALL entries related to this callId
-      Object.keys(c2).forEach(k => {
-        if (c2[k]?.callId === globalCall.callId) delete c2[k];
-      });
-      delete c2[user.email];
-      if (callerEmail) delete c2[`outgoing_${callerEmail}`];
-      store.set("ulx_calls", c2);
-      // Push the cleaned state to Supabase
-      supabase.from("platform_data").upsert(
-        { key: "ulx_calls", value: c2, updated_at: new Date().toISOString() },
-        { onConflict: "key" }
-      );
-    }, 2000);
-  } else if (globalCall.type === "outgoing") {
-    // Caller cancels before pickup
-    const targets = globalCall.targets || (globalCall.target ? [globalCall.target] : []);
-    targets.forEach(em => {
-      if (calls[em]) {
-        calls[em].status = "cancelled";
-      }
-    });
-    delete calls[`outgoing_${user.email}`];
-    store.set("ulx_calls", calls);
-    // Push immediately so callee's portal removes the incoming call screen
-    supabase.from("platform_data").upsert(
-      { key: "ulx_calls", value: calls, updated_at: new Date().toISOString() },
-      { onConflict: "key" }
-    );
-
-    setTimeout(() => {
-      const c2 = store.get("ulx_calls") || {};
-      targets.forEach(em => delete c2[em]);
-      delete c2[`outgoing_${user.email}`];
-      store.set("ulx_calls", c2);
-      // Push the cleaned state too
-      supabase.from("platform_data").upsert(
-        { key: "ulx_calls", value: c2, updated_at: new Date().toISOString() },
-        { onConflict: "key" }
-      );
-    }, 2000);
+  // Clean up call signals
+  if (globalCall?.callId) {
+    supabase.from("call_signals").delete().eq("call_id", globalCall.callId);
   }
 
-  // Stop local stream from global handler
+  // Stop local stream
   if (globalLocalStreamRef.current) {
     globalLocalStreamRef.current.getTracks().forEach(t => t.stop());
     globalLocalStreamRef.current = null;
   }
-  // Close peer connections from global handler
   Object.values(globalPeerConns.current).forEach(pc => pc.close());
   globalPeerConns.current = {};
+  stopLocalStream();
+  closePeerConnections();
 
-  // Clean up call signals from Supabase
-  if (globalCall?.callId) {
-    supabase.from("call_signals").delete().eq("call_id", globalCall.callId);
-  }
   setGlobalCall(null);
 };
 
