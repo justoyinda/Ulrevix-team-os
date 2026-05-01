@@ -1536,25 +1536,33 @@ const Auth = ({ onLogin }) => {
       // Merge pending list with history-derived list
       const mergedPendingList = [...new Set([...pendingEmailsList, ...historyAllowed])];
 
-      const { data: pdHistory } = await supabase
-        .from("platform_data")
-        .select("value")
-        .eq("key", "ulx_email_history")
-        .maybeSingle();
-      const emailHistory = pdHistory?.value || await sbAuth.getEmailHistory();
-      const emailHistoryList = Array.isArray(emailHistory) ? emailHistory : [];
+      let emailHistoryList = [];
+      try {
+        const { data: pdHistory } = await supabase
+          .from("platform_data")
+          .select("value")
+          .eq("key", "ulx_email_history")
+          .maybeSingle();
+        const emailHistory = pdHistory?.value || await sbAuth.getEmailHistory();
+        emailHistoryList = Array.isArray(emailHistory) ? emailHistory : [];
+      } catch (e) {
+        console.error("emailHistory fetch error:", e);
+        emailHistoryList = [];
+      }
 
       const adminRoleEmails = emailHistoryList
         .filter(h => h.action === "authorized" && h.role === "admin" && h.email !== ADMIN_EMAIL)
         .map(h => h.email);
       const allAdminEmails = [...new Set([ADMIN_EMAIL, ...adminRoleEmails])];
 
-      if (role === "member" && allAdminEmails.includes(em)) {
+      // Admin email always gets through regardless of history
+      if (em === ADMIN_EMAIL) {
+        // skip role checks for primary admin
+      } else if (role === "member" && allAdminEmails.includes(em)) {
         setErr("This email is not authorized for this role.");
         setLoading(false);
         return;
-      }
-      if (role === "admin" && !allAdminEmails.includes(em)) {
+      } else if (role === "admin" && !allAdminEmails.includes(em)) {
         setErr("This email is not authorized for this role.");
         setLoading(false);
         return;
@@ -1564,7 +1572,7 @@ const Auth = ({ onLogin }) => {
         ? allAdminEmails
         : [...INITIAL_MEMBER_EMAILS, ...mergedPendingList].filter(e => !allAdminEmails.includes(e));
 
-      if (!allowedEmails.includes(em) && !(role === "admin" && em === ADMIN_EMAIL)) {
+      if (em !== ADMIN_EMAIL && !allowedEmails.includes(em)) {
         setErr("This email is not authorized for this role.");
         setLoading(false);
         return;
