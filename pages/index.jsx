@@ -1673,13 +1673,25 @@ const Auth = ({ onLogin }) => {
         const registeredAt = new Date().toISOString();
         userRecord = { email: em, name: em.split("@")[0], role: allAdminEmails.includes(em) ? "admin" : "member", color: COLORS[colorIndex], dept: "", title: "", status: "", team: "", registeredAt, registered_at: registeredAt };
         await sbAuth.setUser(em, userRecord);
-      }
-      addActivity(em, "joined the platform", "", null);
-      userRecord.email = em;
-      onLogin(userRecord);
-    } catch (e) { setErr("Registration failed. Please try again."); }
-    setLoading(false);
-  };
+      // Also update platform_data ulx_users so all devices see the new member
+      const { data: pdUsers } = await supabase
+        .from("platform_data")
+        .select("value")
+        .eq("key", "ulx_users")
+        .maybeSingle();
+      const currentUsers = pdUsers?.value || {};
+      currentUsers[em] = userRecord;
+      await supabase.from("platform_data").upsert(
+        { key: "ulx_users", value: currentUsers, updated_at: new Date().toISOString() },
+        { onConflict: "key" }
+      );
+    }
+    addActivity(em, "joined the platform", "", null);
+    userRecord.email = em;
+    onLogin(userRecord);
+  } catch (e) { setErr("Registration failed. Please try again."); }
+  setLoading(false);
+};
 
   const handleResetRequest = async () => {
     setErr(""); setLoading(true);
