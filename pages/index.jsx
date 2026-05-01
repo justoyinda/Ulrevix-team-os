@@ -1523,6 +1523,19 @@ const Auth = ({ onLogin }) => {
       const pendingEmails = pdPending?.value || (await sbAuth.getPendingEmails()).map(r => r.email);
       const pendingEmailsList = Array.isArray(pendingEmails) ? pendingEmails : [];
 
+      // Also derive allowed emails from email history as backup
+      const authorizedFromHistory = emailHistoryList
+        .reduce((acc, h) => {
+          if (!acc[h.email]) acc[h.email] = h;
+          return acc;
+        }, {});
+      const historyAllowed = Object.entries(authorizedFromHistory)
+        .filter(([em, h]) => h.action === "authorized")
+        .map(([em]) => em);
+
+      // Merge pending list with history-derived list
+      const mergedPendingList = [...new Set([...pendingEmailsList, ...historyAllowed])];
+
       const { data: pdHistory } = await supabase
         .from("platform_data")
         .select("value")
@@ -1549,7 +1562,7 @@ const Auth = ({ onLogin }) => {
 
       const allowedEmails = role === "admin"
         ? allAdminEmails
-        : [...INITIAL_MEMBER_EMAILS, ...pendingEmailsList].filter(e => !allAdminEmails.includes(e));
+        : [...INITIAL_MEMBER_EMAILS, ...mergedPendingList].filter(e => !allAdminEmails.includes(e));
 
       if (!allowedEmails.includes(em) && !(role === "admin" && em === ADMIN_EMAIL)) {
         setErr("This email is not authorized for this role.");
@@ -11357,8 +11370,29 @@ const [confTab, setConfTab] = useState("view");
   const [activeTextBlock, setActiveTextBlock] = useState(null);
 
   const load = async () => {
-    // Always fetch from Supabase so navigating away and back
-    // never loses the current state
+    // Use email history as source of truth since it reliably syncs to Supabase
+    const { data: pdHistory } = await supabase
+      .from("platform_data")
+      .select("value")
+      .eq("key", "ulx_email_history")
+      .maybeSingle();
+    const emailHistory = pdHistory?.value || store.get(KEYS.emailHistory) || [];
+    const emailHistoryList = Array.isArray(emailHistory) ? emailHistory : [];
+
+    // Get the most recent action for each email
+    const emailStatusMap = {};
+    emailHistoryList.forEach(h => {
+      if (!emailStatusMap[h.email]) {
+        emailStatusMap[h.email] = h;
+      }
+    });
+
+    // Authorized emails are those whose most recent action is "authorized"
+    const authorizedFromHistory = Object.entries(emailStatusMap)
+      .filter(([em, h]) => h.action === "authorized")
+      .map(([em]) => em);
+
+    // Also try pending emails from Supabase
     const { data: pdPending } = await supabase
       .from("platform_data")
       .select("value")
@@ -11367,6 +11401,10 @@ const [confTab, setConfTab] = useState("view");
     const pending = pdPending?.value || store.get(KEYS.pendingEmails) || [];
     const pendingList = Array.isArray(pending) ? pending : [];
 
+    // Merge both sources so nothing is missed
+    const allAllowed = [...new Set([...INITIAL_MEMBER_EMAILS, ...pendingList, ...authorizedFromHistory])];
+
+    // Get blocked emails
     const { data: pdBlocked } = await supabase
       .from("platform_data")
       .select("value")
@@ -11375,6 +11413,7 @@ const [confTab, setConfTab] = useState("view");
     const blocked = pdBlocked?.value || store.get(KEYS.blockedEmails) || [];
     const blockedList = Array.isArray(blocked) ? blocked : [];
 
+    // Get profile requests
     const { data: pdReqs } = await supabase
       .from("platform_data")
       .select("value")
@@ -11383,12 +11422,16 @@ const [confTab, setConfTab] = useState("view");
     const profileReqsData = pdReqs?.value || store.get(KEYS.profileRequests) || [];
     const profileReqsList = Array.isArray(profileReqsData) ? profileReqsData : [];
 
-    // Also update localStorage so other functions stay in sync
+    // Update localStorage to stay in sync
     store.set(KEYS.pendingEmails, pendingList);
     store.set(KEYS.blockedEmails, blockedList);
     store.set(KEYS.profileRequests, profileReqsList);
+    store.set(KEYS.emailHistory, emailHistoryList);
 
-    setAllowedEmails([...INITIAL_MEMBER_EMAILS, ...pendingList]);
+    // Remove blocked emails from the allowed list
+    const finalAllowed = allAllowed.filter(em => !blockedList.includes(em));
+
+    setAllowedEmails(finalAllowed);
     setBlockedEmails(blockedList);
     setProfileReqs(profileReqsList.filter(r => r.status === "pending"));
   };
@@ -11421,7 +11464,7 @@ const [confTab, setConfTab] = useState("view");
     };
   }, []);
 
-  const addMember = () => {
+  const addMember = async () => {
     if (!newEmail.trim()) return;
     const em = newEmail.trim().toLowerCase();
     // Remove from blocked list if previously blocked
@@ -11436,6 +11479,11 @@ const [confTab, setConfTab] = useState("view");
     if (!existing.includes(em) && !INITIAL_MEMBER_EMAILS.includes(em)) {
       existing.push(em);
       store.set(KEYS.pendingEmails, existing);
+      // Force sync to Supabase immediately
+      await supabase.from("platform_data").upsert(
+        { key: "ulx_pending_emails", value: existing, updated_at: new Date().toISOString() },
+        { onConflict: "key" }
+      );
       // If registering as admin, update user role immediately if user exists
       if (newEmailRole === "admin") {
         const users = store.get(KEYS.users) || {};
