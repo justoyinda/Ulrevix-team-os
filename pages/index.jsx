@@ -14204,7 +14204,35 @@ useEffect(() => {
       if (prev && prev.type === "active") {
         const outgoing2 = calls[`outgoing_${user.email}`];
         const incoming2 = calls[user.email];
-        if (!outgoing2 && !incoming2) { stopLocalStream(); closePeerConnections(); return null; }
+        // Call ended if both entries gone OR either marked declined/cancelled
+        const myEntry = outgoing2 || incoming2;
+        if (!myEntry) {
+          stopLocalStream();
+          closePeerConnections();
+          return null;
+        }
+        if (myEntry.status === "declined" || myEntry.status === "cancelled") {
+          stopLocalStream();
+          closePeerConnections();
+          return null;
+        }
+        // Also check by callId — if our callId entry is gone or ended
+        const callStillActive = Object.values(calls).some(
+          c => c?.callId === prev.callId && c?.status !== "declined" && c?.status !== "cancelled"
+        );
+        if (!callStillActive) {
+          stopLocalStream();
+          closePeerConnections();
+          return null;
+        }
+      }
+
+      // Incoming call rejected by us already or cancelled by caller
+      if (prev && prev.type === "incoming") {
+        const myEntry = calls[user.email];
+        if (!myEntry) return null;
+        if (myEntry.status === "cancelled" || myEntry.status === "declined") return null;
+        if (myEntry.callId !== prev.callId) return null;
       }
 
       return prev;
@@ -14373,14 +14401,23 @@ const handleGlobalEndCall = () => {
   const calls = store.get("ulx_calls") || {};
 
   if (globalCall.type === "incoming" || globalCall.type === "active") {
-    // Rejecting or ending — mark as declined for the caller
+    // Rejecting or ending — mark as declined/ended for ALL parties
     if (calls[user.email]) {
       calls[user.email].status = "declined";
     }
     if (callerEmail && calls[`outgoing_${callerEmail}`]) {
       calls[`outgoing_${callerEmail}`].status = "declined";
     }
+    // If this was an active call, also clear the callee's entry
+    // so the other party's portal detects the call ended
+    const allCallKeys = Object.keys(calls);
+    allCallKeys.forEach(k => {
+      if (calls[k]?.callId === globalCall.callId) {
+        calls[k].status = "declined";
+      }
+    });
     store.set("ulx_calls", calls);
+    // Push to Supabase immediately so other device sees it
     supabase.from("platform_data").upsert(
       { key: "ulx_calls", value: calls, updated_at: new Date().toISOString() },
       { onConflict: "key" }
@@ -14388,20 +14425,30 @@ const handleGlobalEndCall = () => {
 
     setTimeout(() => {
       const c2 = store.get("ulx_calls") || {};
+      // Delete ALL entries related to this callId
+      Object.keys(c2).forEach(k => {
+        if (c2[k]?.callId === globalCall.callId) delete c2[k];
+      });
       delete c2[user.email];
       if (callerEmail) delete c2[`outgoing_${callerEmail}`];
       store.set("ulx_calls", c2);
+      // Push the cleaned state to Supabase
+      supabase.from("platform_data").upsert(
+        { key: "ulx_calls", value: c2, updated_at: new Date().toISOString() },
+        { onConflict: "key" }
+      );
     }, 2000);
   } else if (globalCall.type === "outgoing") {
     // Caller cancels before pickup
     const targets = globalCall.targets || (globalCall.target ? [globalCall.target] : []);
     targets.forEach(em => {
-      if (calls[em] && calls[em].status === "ringing") {
+      if (calls[em]) {
         calls[em].status = "cancelled";
       }
     });
     delete calls[`outgoing_${user.email}`];
     store.set("ulx_calls", calls);
+    // Push immediately so callee's portal removes the incoming call screen
     supabase.from("platform_data").upsert(
       { key: "ulx_calls", value: calls, updated_at: new Date().toISOString() },
       { onConflict: "key" }
@@ -14410,7 +14457,13 @@ const handleGlobalEndCall = () => {
     setTimeout(() => {
       const c2 = store.get("ulx_calls") || {};
       targets.forEach(em => delete c2[em]);
+      delete c2[`outgoing_${user.email}`];
       store.set("ulx_calls", c2);
+      // Push the cleaned state too
+      supabase.from("platform_data").upsert(
+        { key: "ulx_calls", value: c2, updated_at: new Date().toISOString() },
+        { onConflict: "key" }
+      );
     }, 2000);
   }
 
