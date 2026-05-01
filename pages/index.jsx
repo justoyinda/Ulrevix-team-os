@@ -1501,21 +1501,61 @@ const Auth = ({ onLogin }) => {
     setErr(""); setInfo(""); setLoading(true);
     const em = email.trim().toLowerCase();
     try {
-      const blockedEmails = await sbAuth.getBlockedEmails();
-      if (blockedEmails.includes(em)) { setErr("This email has been blocked. Contact your admin."); setLoading(false); return; }
+      // Always fetch fresh data from Supabase for auth checks
+      // so new devices are never blocked by empty localStorage
+      const { data: pdBlocked } = await supabase
+        .from("platform_data")
+        .select("value")
+        .eq("key", "ulx_blocked_emails")
+        .maybeSingle();
+      const blockedEmails = pdBlocked?.value || await sbAuth.getBlockedEmails();
+      if (Array.isArray(blockedEmails) && blockedEmails.includes(em)) {
+        setErr("This email has been blocked. Contact your admin.");
+        setLoading(false);
+        return;
+      }
 
-      const pendingRows = await sbAuth.getPendingEmails();
-      const pendingEmails = pendingRows.map(r => r.email);
-      const emailHistory = await sbAuth.getEmailHistory();
+      const { data: pdPending } = await supabase
+        .from("platform_data")
+        .select("value")
+        .eq("key", "ulx_pending_emails")
+        .maybeSingle();
+      const pendingEmails = pdPending?.value || (await sbAuth.getPendingEmails()).map(r => r.email);
+      const pendingEmailsList = Array.isArray(pendingEmails) ? pendingEmails : [];
 
-      const adminRoleEmails = emailHistory.filter(h => h.action === "authorized" && h.role === "admin" && h.email !== ADMIN_EMAIL).map(h => h.email);
+      const { data: pdHistory } = await supabase
+        .from("platform_data")
+        .select("value")
+        .eq("key", "ulx_email_history")
+        .maybeSingle();
+      const emailHistory = pdHistory?.value || await sbAuth.getEmailHistory();
+      const emailHistoryList = Array.isArray(emailHistory) ? emailHistory : [];
+
+      const adminRoleEmails = emailHistoryList
+        .filter(h => h.action === "authorized" && h.role === "admin" && h.email !== ADMIN_EMAIL)
+        .map(h => h.email);
       const allAdminEmails = [...new Set([ADMIN_EMAIL, ...adminRoleEmails])];
 
-      if (role === "member" && allAdminEmails.includes(em)) { setErr("This email is not authorized for this role."); setLoading(false); return; }
-      if (role === "admin" && !allAdminEmails.includes(em)) { setErr("This email is not authorized for this role."); setLoading(false); return; }
+      if (role === "member" && allAdminEmails.includes(em)) {
+        setErr("This email is not authorized for this role.");
+        setLoading(false);
+        return;
+      }
+      if (role === "admin" && !allAdminEmails.includes(em)) {
+        setErr("This email is not authorized for this role.");
+        setLoading(false);
+        return;
+      }
 
-      const allowedEmails = role === "admin" ? allAdminEmails : [...INITIAL_MEMBER_EMAILS, ...pendingEmails].filter(e => !allAdminEmails.includes(e));
-      if (!allowedEmails.includes(em) && !(role === "admin" && em === ADMIN_EMAIL)) { setErr("This email is not authorized for this role."); setLoading(false); return; }
+      const allowedEmails = role === "admin"
+        ? allAdminEmails
+        : [...INITIAL_MEMBER_EMAILS, ...pendingEmailsList].filter(e => !allAdminEmails.includes(e));
+
+      if (!allowedEmails.includes(em) && !(role === "admin" && em === ADMIN_EMAIL)) {
+        setErr("This email is not authorized for this role.");
+        setLoading(false);
+        return;
+      }
 
       const { data: pendingResets } = await supabase
         .from("pw_resets")
