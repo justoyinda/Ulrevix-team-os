@@ -10540,55 +10540,81 @@ const Profile = ({ user, onUserUpdate }) => {
   const [form, setForm] = useState({});
 
   const load = async () => {
-    const { data: pdUsers } = await supabase
-      .from("platform_data")
-      .select("value")
-      .eq("key", "ulx_users")
-      .maybeSingle();
-    const users = pdUsers?.value || store.get(KEYS.users) || {};
-    let me = users[user.email] || {};
-
-    // If registeredAt is missing, try to get it from email history
-    if (!me.registeredAt && !me.registered_at) {
-      const { data: pdHistory } = await supabase
+    try {
+      const { data: pdUsers } = await supabase
         .from("platform_data")
         .select("value")
-        .eq("key", "ulx_email_history")
+        .eq("key", "ulx_users")
         .maybeSingle();
-      const history = Array.isArray(pdHistory?.value) ? pdHistory.value : [];
-      const myEntry = history
-        .filter(h => h.email === user.email && h.action === "authorized")
-        .sort((a, b) => new Date(a.at) - new Date(b.at))[0];
-      if (myEntry) {
-        me = { ...me, registeredAt: myEntry.at };
-      }
-      // Also try the Supabase users table directly
-      const { data: userRow } = await supabase
-        .from("users")
-        .select("*")
-        .eq("email", user.email)
-        .maybeSingle();
-      if (userRow?.registered_at) {
-        me = { ...me, registeredAt: userRow.registered_at };
-      }
-    }
+      const users = pdUsers?.value || store.get(KEYS.users) || {};
+      let me = users[user.email] || {};
 
-    setProfile(me);
-    setForm({
-      name: me.name || "",
-      team: me.team || "",
-      dept: me.dept || "",
-      title: me.title || "",
-      status: me.status || "",
-    });
-    const reqs = store.get(KEYS.profileRequests) || [];
-    const myPending = reqs.filter(
-      (r) => r.email === user.email && r.status === "pending"
-    );
-    setPending(myPending.length > 0 ? myPending : null);
+      // If registeredAt is missing, try email history
+      if (!me.registeredAt && !me.registered_at) {
+        try {
+          const { data: pdHistory } = await supabase
+            .from("platform_data")
+            .select("value")
+            .eq("key", "ulx_email_history")
+            .maybeSingle();
+          const history = Array.isArray(pdHistory?.value) ? pdHistory.value : [];
+          const myEntry = history
+            .filter(h => h.email === user.email && h.action === "authorized")
+            .sort((a, b) => new Date(a.at) - new Date(b.at))[0];
+          if (myEntry) {
+            me = { ...me, registeredAt: myEntry.at };
+          }
+        } catch (e) {}
+
+        try {
+          const { data: userRow } = await supabase
+            .from("users")
+            .select("*")
+            .eq("email", user.email)
+            .maybeSingle();
+          if (userRow?.registered_at) {
+            me = { ...me, registeredAt: userRow.registered_at };
+          }
+        } catch (e) {}
+      }
+
+      setProfile(me);
+      setForm({
+        name: me.name || "",
+        team: me.team || "",
+        dept: me.dept || "",
+        title: me.title || "",
+        status: me.status || "",
+      });
+      const reqs = store.get(KEYS.profileRequests) || [];
+      const myPending = reqs.filter(
+        (r) => r.email === user.email && r.status === "pending"
+      );
+      setPending(myPending.length > 0 ? myPending : null);
+    } catch (e) {
+      console.error("Profile load error:", e);
+      // Fallback to localStorage
+      const users = store.get(KEYS.users) || {};
+      const me = users[user.email] || {};
+      setProfile(me);
+      setForm({
+        name: me.name || "",
+        team: me.team || "",
+        dept: me.dept || "",
+        title: me.title || "",
+        status: me.status || "",
+      });
+      const reqs = store.get(KEYS.profileRequests) || [];
+      const myPending = reqs.filter(
+        (r) => r.email === user.email && r.status === "pending"
+      );
+      setPending(myPending.length > 0 ? myPending : null);
+    }
   };
 
-  useEffect(load, [user.email]);
+  useEffect(() => {
+    load();
+  }, [user.email]);
 
   const submitChanges = () => {
     const reqs = store.get(KEYS.profileRequests) || [];
