@@ -4132,7 +4132,9 @@ if (file.size > MAX_DIRECT) {
       const reviewKey = `${KEYS.taskUploadReviews}_${projectId}_${taskId}_${u.id}`;
       const reviewData = store.get(reviewKey);
       const uploadStatus = reviewData?.status || "pending";
-      const canSeeUpload = uploadStatus === "approved" || viewerRole === "admin" || u.uploadedBy === uploaderEmail;
+      const isUploader = u.uploadedBy === uploaderEmail;
+      const isAdmin = viewerRole === "admin";
+      const canSeeUpload = uploadStatus === "approved" || isAdmin || isUploader;
       if (!canSeeUpload) return null;
       return (
         <div key={u.id} style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${uploadStatus === "approved" ? TEAL + "44" : uploadStatus === "rejected" ? RED + "44" : BORDER}`, borderRadius: 6, padding: "8px 12px" }}>
