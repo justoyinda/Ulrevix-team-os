@@ -11356,16 +11356,41 @@ const [confTab, setConfTab] = useState("view");
   const [previewMode, setPreviewMode] = useState(false);
   const [activeTextBlock, setActiveTextBlock] = useState(null);
 
-  const load = () => {
-    const pending = store.get(KEYS.pendingEmails) || [];
-    const blocked = store.get(KEYS.blockedEmails) || [];
-    setAllowedEmails([...INITIAL_MEMBER_EMAILS, ...pending]);
-    setBlockedEmails(blocked);
-    setProfileReqs(
-      (store.get(KEYS.profileRequests) || []).filter(
-        (r) => r.status === "pending"
-      )
-    );
+  const load = async () => {
+    // Always fetch from Supabase so navigating away and back
+    // never loses the current state
+    const { data: pdPending } = await supabase
+      .from("platform_data")
+      .select("value")
+      .eq("key", "ulx_pending_emails")
+      .maybeSingle();
+    const pending = pdPending?.value || store.get(KEYS.pendingEmails) || [];
+    const pendingList = Array.isArray(pending) ? pending : [];
+
+    const { data: pdBlocked } = await supabase
+      .from("platform_data")
+      .select("value")
+      .eq("key", "ulx_blocked_emails")
+      .maybeSingle();
+    const blocked = pdBlocked?.value || store.get(KEYS.blockedEmails) || [];
+    const blockedList = Array.isArray(blocked) ? blocked : [];
+
+    const { data: pdReqs } = await supabase
+      .from("platform_data")
+      .select("value")
+      .eq("key", "ulx_profile_requests")
+      .maybeSingle();
+    const profileReqsData = pdReqs?.value || store.get(KEYS.profileRequests) || [];
+    const profileReqsList = Array.isArray(profileReqsData) ? profileReqsData : [];
+
+    // Also update localStorage so other functions stay in sync
+    store.set(KEYS.pendingEmails, pendingList);
+    store.set(KEYS.blockedEmails, blockedList);
+    store.set(KEYS.profileRequests, profileReqsList);
+
+    setAllowedEmails([...INITIAL_MEMBER_EMAILS, ...pendingList]);
+    setBlockedEmails(blockedList);
+    setProfileReqs(profileReqsList.filter(r => r.status === "pending"));
   };
 
   const loadPwResets = async () => {
@@ -11388,7 +11413,12 @@ const [confTab, setConfTab] = useState("view");
     loadPwResets();
     // Poll every 10 seconds so admin sees new requests without refreshing
     const interval = setInterval(loadPwResets, 10000);
-    return () => clearInterval(interval);
+    // Also reload the member list every 10 seconds to stay in sync
+    const loadInterval = setInterval(load, 10000);
+    return () => {
+      clearInterval(interval);
+      clearInterval(loadInterval);
+    };
   }, []);
 
   const addMember = () => {
