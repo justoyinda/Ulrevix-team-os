@@ -11439,7 +11439,7 @@ const EditProfilesPanel = ({ adminEmail }) => {
     });
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!selected) return;
     const allUsers = store.get(KEYS.users) || {};
     if (!allUsers[selected]) return;
@@ -11447,6 +11447,25 @@ const EditProfilesPanel = ({ adminEmail }) => {
       allUsers[selected][field] = val;
     });
     store.set(KEYS.users, allUsers);
+
+    // Sync to Supabase users table directly
+    await supabase.from("users").upsert({
+      email: selected,
+      name: allUsers[selected].name || "",
+      role: allUsers[selected].role || "member",
+      team: allUsers[selected].team || "",
+      title: allUsers[selected].title || "",
+      status: allUsers[selected].status || "",
+      dept: allUsers[selected].dept || "",
+      color: allUsers[selected].color || "",
+    }, { onConflict: "email" });
+
+    // Also sync platform_data ulx_users
+    await supabase.from("platform_data").upsert(
+      { key: "ulx_users", value: allUsers, updated_at: new Date().toISOString() },
+      { onConflict: "key" }
+    );
+
     addActivity(adminEmail, "edited profile of", selected, null);
     addNotif(selected, "profileChange", "Your profile was updated by the admin.");
     setSaved(true);
@@ -11885,7 +11904,7 @@ const deleteUserAccount = async (em) => {
     loadPwResets();
   };
 
-  const handleProfile = (id, action) => {
+  const handleProfile = async (id, action) => {
     const reqs = store.get(KEYS.profileRequests) || [];
     const idx = reqs.findIndex((r) => r.id === id);
     if (idx >= 0) {
@@ -11896,6 +11915,24 @@ const deleteUserAccount = async (em) => {
         if (users[email]) {
           users[email][field] = newVal;
           store.set(KEYS.users, users);
+
+          // Sync to Supabase users table directly
+          await supabase.from("users").upsert({
+            email,
+            name: users[email].name || "",
+            role: users[email].role || "member",
+            team: users[email].team || "",
+            title: users[email].title || "",
+            status: users[email].status || "",
+            dept: users[email].dept || "",
+            color: users[email].color || "",
+          }, { onConflict: "email" });
+
+          // Also sync platform_data ulx_users
+          await supabase.from("platform_data").upsert(
+            { key: "ulx_users", value: users, updated_at: new Date().toISOString() },
+            { onConflict: "key" }
+          );
         }
         addNotif(
           email,
