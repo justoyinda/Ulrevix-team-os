@@ -5055,7 +5055,11 @@ const editTask = (projectId, taskId) => {
   user={user}
   allUsers={allUsers}
 />
-                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
                 );
               })
             )}
