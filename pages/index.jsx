@@ -4542,6 +4542,8 @@ if (file.size > MAX_DIRECT) {
 // ─── PROJECTS ─────────────────────────────────────────────────────────────────
 const Projects = ({ user }) => {
   const [showAddPrivateTask, setShowAddPrivateTask] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
+const [editTaskForm, setEditTaskForm] = useState({});
 const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", deadline: "" });
   const [projects, setProjects] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -4969,7 +4971,94 @@ const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", 
                         color={statusColor(task.status)}
                       />
                     )}
+                      {user.email === ADMIN_EMAIL && (
+  <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
+    <button
+      onClick={() => {
+        setEditingTask({ projectId: p.id, taskId: task.id });
+        setEditTaskForm({
+          title: task.title,
+          assignee: task.assignee || "",
+          deadline: task.deadline || ""
+        });
+      }}
+      style={{ padding: "3px 9px", background: GOLD + "22", border: `1px solid ${GOLD}44`, borderRadius: 5, color: GOLD, fontSize: 10, cursor: "pointer", fontFamily: "'DM Mono',monospace" }}
+    >
+      EDIT
+    </button>
+    <button
+      onClick={() => {
+        if (!window.confirm(`Delete task "${task.title}"? This cannot be undone.`)) return;
+        const ps = store.get(KEYS.projects) || [];
+        const pi = ps.findIndex(p2 => p2.id === p.id);
+        if (pi < 0) return;
+        ps[pi].tasks = ps[pi].tasks.filter(t => t.id !== task.id);
+        saveProjects(ps);
+        load();
+      }}
+      style={{ padding: "3px 9px", background: RED + "22", border: `1px solid ${RED}44`, borderRadius: 5, color: RED, fontSize: 10, cursor: "pointer", fontFamily: "'DM Mono',monospace" }}
+    >
+      DELETE
+    </button>
+  </div>
+)}
                   </div>
+                    {user.email === ADMIN_EMAIL && editingTask?.taskId === task.id && (
+  <div style={{ marginTop: 10, padding: "12px 14px", background: "rgba(255,255,255,0.04)", border: `1px solid ${GOLD}44`, borderRadius: 8 }}>
+    <Inp
+      label="Task Title"
+      value={editTaskForm.title}
+      onChange={(v) => setEditTaskForm(f => ({ ...f, title: v }))}
+      placeholder="Task title..."
+    />
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 7, fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em" }}>ASSIGN TO</div>
+      <select
+        value={editTaskForm.assignee}
+        onChange={(e) => setEditTaskForm(f => ({ ...f, assignee: e.target.value }))}
+        style={{ width: "100%", padding: "10px 14px", background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}`, borderRadius: 8, color: "#fff", fontSize: 13, outline: "none" }}
+      >
+        {Object.entries(allUsers).map(([em, u]) => (
+          <option key={em} value={em}>{u?.name || em}</option>
+        ))}
+      </select>
+    </div>
+    <Inp
+      label="Deadline"
+      value={editTaskForm.deadline}
+      onChange={(v) => setEditTaskForm(f => ({ ...f, deadline: v }))}
+      type="date"
+    />
+    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+      <Btn
+        onClick={() => {
+          const ps = store.get(KEYS.projects) || [];
+          const pi = ps.findIndex(p2 => p2.id === editingTask.projectId);
+          if (pi < 0) return;
+          const ti = ps[pi].tasks.findIndex(t => t.id === editingTask.taskId);
+          if (ti < 0) return;
+          ps[pi].tasks[ti].title = editTaskForm.title;
+          ps[pi].tasks[ti].assignee = editTaskForm.assignee;
+          ps[pi].tasks[ti].deadline = editTaskForm.deadline;
+          ps[pi].tasks[ti].updatedAt = new Date().toISOString();
+          saveProjects(ps);
+          setEditingTask(null);
+          load();
+        }}
+        style={{ padding: "7px 16px", fontSize: 12, background: TEAL, color: BG }}
+      >
+        Save
+      </Btn>
+      <Btn
+        variant="secondary"
+        onClick={() => setEditingTask(null)}
+        style={{ padding: "7px 12px", fontSize: 12 }}
+      >
+        Cancel
+      </Btn>
+    </div>
+  </div>
+)}
                  <TaskUploadSection
   projectId={p.id}
   taskId={task.id}
@@ -5689,6 +5778,8 @@ const CreateProjectModal = ({ show, onClose, onCreated, user }) => {
 const MyTasks = ({ user }) => {
   const [tasks, setTasks] = useState([]);
   const [filter, setFilter] = useState("All");
+  const [editingMyTask, setEditingMyTask] = useState(null);
+const [editMyTaskForm, setEditMyTaskForm] = useState({});
 const [showAssignForm, setShowAssignForm] = useState(false);
 const [assignForm, setAssignForm] = useState({ title: "", assignee: "", deadline: "" });
 const [assignErr, setAssignErr] = useState("");
@@ -5937,6 +6028,92 @@ const filtered = (filter === "All" ? tasks : tasks.filter((t) => t.status === fi
               </div>
             </div>
             <Badge text={task.status} color={statusColor(task.status)} />
+              {user.email === ADMIN_EMAIL && (
+  <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
+    <button
+      onClick={() => {
+        setEditingMyTask(task.id);
+        setEditMyTaskForm({
+          title: task.title,
+          assignee: task.assignee || "",
+          deadline: task.deadline || ""
+        });
+      }}
+      style={{ padding: "3px 9px", background: GOLD + "22", border: `1px solid ${GOLD}44`, borderRadius: 5, color: GOLD, fontSize: 10, cursor: "pointer", fontFamily: "'DM Mono',monospace" }}
+    >
+      EDIT
+    </button>
+    <button
+      onClick={() => {
+        if (!window.confirm(`Delete "${task.title}"?`)) return;
+        const ps = store.get(KEYS.projects) || [];
+        const pi = ps.findIndex(p => p.id === task.projectId);
+        if (pi < 0) return;
+        ps[pi].tasks = ps[pi].tasks.filter(t => t.id !== task.id);
+        store.set(KEYS.projects, ps);
+        loadTasks();
+      }}
+      style={{ padding: "3px 9px", background: RED + "22", border: `1px solid ${RED}44`, borderRadius: 5, color: RED, fontSize: 10, cursor: "pointer", fontFamily: "'DM Mono',monospace" }}
+    >
+      DELETE
+    </button>
+  </div>
+)}
+              {user.email === ADMIN_EMAIL && editingMyTask === task.id && (
+  <div style={{ marginTop: 10, padding: "12px 14px", background: "rgba(255,255,255,0.04)", border: `1px solid ${GOLD}44`, borderRadius: 8 }}>
+    <Inp
+      label="Task Title"
+      value={editMyTaskForm.title}
+      onChange={(v) => setEditMyTaskForm(f => ({ ...f, title: v }))}
+    />
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 7, fontFamily: "'DM Mono',monospace" }}>ASSIGN TO</div>
+      <select
+        value={editMyTaskForm.assignee}
+        onChange={(e) => setEditMyTaskForm(f => ({ ...f, assignee: e.target.value }))}
+        style={{ width: "100%", padding: "10px 14px", background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}`, borderRadius: 8, color: "#fff", fontSize: 13, outline: "none" }}
+      >
+        {Object.entries(allUsers).map(([em, u]) => (
+          <option key={em} value={em}>{u?.name || em}</option>
+        ))}
+      </select>
+    </div>
+    <Inp
+      label="Deadline"
+      value={editMyTaskForm.deadline}
+      onChange={(v) => setEditMyTaskForm(f => ({ ...f, deadline: v }))}
+      type="date"
+    />
+    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+      <Btn
+        onClick={() => {
+          const ps = store.get(KEYS.projects) || [];
+          const pi = ps.findIndex(p => p.id === task.projectId);
+          if (pi < 0) return;
+          const ti = ps[pi].tasks.findIndex(t => t.id === task.id);
+          if (ti < 0) return;
+          ps[pi].tasks[ti].title = editMyTaskForm.title;
+          ps[pi].tasks[ti].assignee = editMyTaskForm.assignee;
+          ps[pi].tasks[ti].deadline = editMyTaskForm.deadline;
+          ps[pi].tasks[ti].updatedAt = new Date().toISOString();
+          store.set(KEYS.projects, ps);
+          setEditingMyTask(null);
+          loadTasks();
+        }}
+        style={{ padding: "7px 16px", fontSize: 12, background: TEAL, color: BG }}
+      >
+        Save
+      </Btn>
+      <Btn
+        variant="secondary"
+        onClick={() => setEditingMyTask(null)}
+        style={{ padding: "7px 12px", fontSize: 12 }}
+      >
+        Cancel
+      </Btn>
+    </div>
+  </div>
+)}
           </div>
           ))}
         </div>
