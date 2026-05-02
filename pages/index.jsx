@@ -1672,8 +1672,22 @@ const Auth = ({ onLogin }) => {
         const colorIndex = Object.keys(allUsers).length % COLORS.length;
         const registeredAt = new Date().toISOString();
         userRecord = { email: em, name: em.split("@")[0], role: allAdminEmails.includes(em) ? "admin" : "member", color: COLORS[colorIndex], dept: "", title: "", status: "", team: "", registeredAt, registered_at: registeredAt };
-        await sbAuth.setUser(em, userRecord);
-      // Also update platform_data ulx_users so all devices see the new member
+        // Save to Supabase users table directly
+      await supabase.from("users").upsert({
+        email: em,
+        name: userRecord.name || em.split("@")[0],
+        role: userRecord.role || "member",
+        team: userRecord.team || "",
+        title: userRecord.title || "",
+        status: userRecord.status || "",
+        dept: userRecord.dept || "",
+        color: userRecord.color || COLORS[0],
+      }, { onConflict: "email" });
+
+      // Also save via sbAuth as backup
+      await sbAuth.setUser(em, userRecord);
+
+      // Update platform_data ulx_users directly
       const { data: pdUsers } = await supabase
         .from("platform_data")
         .select("value")
