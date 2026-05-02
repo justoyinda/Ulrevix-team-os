@@ -4543,6 +4543,8 @@ if (file.size > MAX_DIRECT) {
 const Projects = ({ user }) => {
   const [showAddPrivateTask, setShowAddPrivateTask] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  const [editingPrivateProject, setEditingPrivateProject] = useState(false);
+const [privateProjectForm, setPrivateProjectForm] = useState({ name: "", description: "" });
 const [editTaskForm, setEditTaskForm] = useState({});
 const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", deadline: "" });
   const [projects, setProjects] = useState([]);
@@ -5401,7 +5403,70 @@ const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", 
           </Btn>
         )}
       </div>
-
+{(() => {
+  const privateProj = projects.find(p => p.id === "__admin_private__");
+  if (!privateProj || user.email !== ADMIN_EMAIL) return null;
+  return (
+    <div style={{ background: CARD, border: `1px solid ${PURPLE}44`, borderRadius: 12, padding: "16px 20px", marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: editingPrivateProject ? 14 : 0 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", marginBottom: 3 }}>{privateProj.name}</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.35)" }}>{privateProj.description}</div>
+        </div>
+        {!editingPrivateProject && (
+          <button
+            onClick={() => {
+              setPrivateProjectForm({ name: privateProj.name, description: privateProj.description });
+              setEditingPrivateProject(true);
+            }}
+            style={{ padding: "5px 14px", background: PURPLE + "22", border: `1px solid ${PURPLE}44`, borderRadius: 6, color: PURPLE, fontSize: 11, cursor: "pointer", fontFamily: "'DM Mono',monospace" }}
+          >
+            EDIT NAME
+          </button>
+        )}
+      </div>
+      {editingPrivateProject && (
+        <div>
+          <Inp
+            label="Project Name"
+            value={privateProjectForm.name}
+            onChange={(v) => setPrivateProjectForm(f => ({ ...f, name: v }))}
+            placeholder="e.g. Admin Private Tasks"
+          />
+          <Inp
+            label="Description"
+            value={privateProjectForm.description}
+            onChange={(v) => setPrivateProjectForm(f => ({ ...f, description: v }))}
+            placeholder="e.g. Private tasks assigned by admin"
+          />
+          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+            <Btn
+              onClick={() => {
+                const ps = store.get(KEYS.projects) || [];
+                const pi = ps.findIndex(p => p.id === "__admin_private__");
+                if (pi < 0) return;
+                ps[pi].name = privateProjectForm.name;
+                ps[pi].description = privateProjectForm.description;
+                saveProjects(ps);
+                setEditingPrivateProject(false);
+              }}
+              style={{ padding: "7px 16px", fontSize: 12, background: TEAL, color: BG }}
+            >
+              Save
+            </Btn>
+            <Btn
+              variant="secondary"
+              onClick={() => setEditingPrivateProject(false)}
+              style={{ padding: "7px 12px", fontSize: 12 }}
+            >
+              Cancel
+            </Btn>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+})()}
       {projects.length === 0 ? (
         <EmptyState
           icon="◈"
