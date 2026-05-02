@@ -138,6 +138,7 @@ weeklySpotlights: "ulx_weekly_spotlights", // [{ week, year, email, name, total,
   performanceSnapshots: "ulx_performance_snapshots", // [{ id, email, month, year, snapshot: { score, uniqueHours, hoursPercent, done, active, myTasks, userWorkHours, overallInsight, strengths, improvements, excelling }, savedAt }]
 performanceGrowthMetrics: "ulx_performance_growth_metrics", // { email: [{ periodLabel, periodType, months, startMonth, startYear, endMonth, endYear, avgScore, avgHoursPercent, totalCompleted, totalActive, avgDone, excelling: [], improving: [], needsImprovement: [], generatedAt }] }
   aboutSections: "ulx_about_sections",
+  projectComments: "ulx_project_comments",
   confidentialityAgreement: "ulx_confidentiality_agreement", // { content: blocks[], lastEditedAt, lastEditedBy }
 confidentialitySigned: "ulx_confidentiality_signed", // { email: { signedAt, fullName, agreedAt } }
 };
@@ -154,6 +155,7 @@ const SHARED_KEYS = new Set([
   "ulx_performance_growth_metrics", "ulx_work_hours",
   "ulx_confidentiality_agreement", "ulx_confidentiality_signed",
   "ulx_about_sections", "ulx_role_clarity", "ulx_call_logs",
+  "ulx_project_comments",
   "ulx_pw_reset_history", "ulx_profile_change_history",
   "ulx_launched", "ulx_launch_date", "ulx_webrtc_signals",
 ]);
@@ -3752,7 +3754,271 @@ const Dashboard = ({ user }) => {
     </div>
   );
 };
+const ProjectComments = ({ projectId, taskId = null, user, allUsers }) => {
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editText, setEditText] = useState("");
+  const [loading, setLoading] = useState(false);
 
+  const storageKey = taskId
+    ? `${KEYS.projectComments}_${projectId}_task_${taskId}`
+    : `${KEYS.projectComments}_${projectId}`;
+
+  const loadComments = async () => {
+    try {
+      const { data } = await supabase
+        .from("platform_data")
+        .select("value")
+        .eq("key", storageKey)
+        .maybeSingle();
+      if (data?.value && Array.isArray(data.value)) {
+        localStorage.setItem(storageKey, JSON.stringify(data.value));
+        setComments(data.value);
+      } else {
+        const local = store.get(storageKey) || [];
+        setComments(local);
+      }
+    } catch (e) {
+      const local = store.get(storageKey) || [];
+      setComments(local);
+    }
+  };
+
+  const saveComments = async (updated) => {
+    store.set(storageKey, updated);
+    await supabase.from("platform_data").upsert(
+      { key: storageKey, value: updated, updated_at: new Date().toISOString() },
+      { onConflict: "key" }
+    );
+    setComments(updated);
+  };
+
+  useEffect(() => { loadComments(); }, [storageKey]);
+
+  const addComment = async () => {
+    if (!newComment.trim()) return;
+    setLoading(true);
+    const comment = {
+      id: Date.now().toString() + Math.random().toString(36).slice(2),
+      projectId,
+      taskId: taskId || null,
+      body: newComment.trim(),
+      authorEmail: user.email,
+      authorName: allUsers[user.email]?.name || user.email,
+      authorColor: allUsers[user.email]?.color || GOLD,
+      createdAt: new Date().toISOString(),
+      editedAt: null,
+    };
+    const updated = [comment, ...comments];
+    await saveComments(updated);
+    setNewComment("");
+    setLoading(false);
+  };
+
+  const deleteComment = async (id) => {
+    if (!window.confirm("Delete this comment?")) return;
+    const updated = comments.filter(c => c.id !== id);
+    await saveComments(updated);
+  };
+
+  const saveEdit = async (id) => {
+    if (!editText.trim()) return;
+    const updated = comments.map(c =>
+      c.id === id
+        ? { ...c, body: editText.trim(), editedAt: new Date().toISOString() }
+        : c
+    );
+    await saveComments(updated);
+    setEditingId(null);
+    setEditText("");
+  };
+
+  const canModify = (comment) =>
+    user.role === "admin" || comment.authorEmail === user.email;
+
+  return (
+    <div style={{ marginTop: taskId ? 12 : 0 }}>
+      {!taskId && (
+        <div style={{
+          fontSize: 11, color: "rgba(255,255,255,0.3)",
+          fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em",
+          marginBottom: 14,
+        }}>
+          PROJECT COMMENTS ({comments.length})
+        </div>
+      )}
+      {taskId && (
+        <div style={{
+          fontSize: 10, color: PURPLE,
+          fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em",
+          marginBottom: 10,
+        }}>
+          TASK COMMENTS ({comments.length})
+        </div>
+      )}
+
+      {/* Add comment input */}
+      <div style={{
+        background: "rgba(255,255,255,0.03)",
+        border: `1px dashed ${taskId ? PURPLE + "55" : GOLD + "55"}`,
+        borderRadius: 8, padding: "12px 14px", marginBottom: 12,
+      }}>
+        <textarea
+          value={newComment}
+          onChange={e => setNewComment(e.target.value)}
+          rows={2}
+          placeholder={taskId ? "Add a task comment..." : "Add a project comment..."}
+          style={{
+            width: "100%", padding: "8px 10px",
+            background: "rgba(255,255,255,0.04)",
+            border: `1px solid ${BORDER}`, borderRadius: 6,
+            color: "#fff", fontSize: 12, resize: "vertical",
+            outline: "none", marginBottom: 8,
+            fontFamily: "'Sora',sans-serif",
+          }}
+        />
+        <Btn
+          onClick={addComment}
+          disabled={loading || !newComment.trim()}
+          style={{
+            padding: "6px 16px", fontSize: 11,
+            background: taskId ? PURPLE : GOLD,
+            color: BG,
+          }}
+        >
+          {loading ? "Posting..." : "+ Post Comment"}
+        </Btn>
+      </div>
+
+      {/* Comments list */}
+      {comments.length === 0 ? (
+        <div style={{
+          fontSize: 11, color: "rgba(255,255,255,0.2)",
+          fontStyle: "italic", padding: "8px 0",
+        }}>
+          No comments yet.
+        </div>
+      ) : (
+        comments.map(c => {
+          const isEditing = editingId === c.id;
+          const u = allUsers[c.authorEmail] || { name: c.authorEmail, color: GOLD };
+          return (
+            <div key={c.id} style={{
+              background: "rgba(255,255,255,0.02)",
+              border: `1px solid ${BORDER}`,
+              borderLeft: `3px solid ${u.color || GOLD}`,
+              borderRadius: 8, padding: "10px 12px", marginBottom: 8,
+            }}>
+              <div style={{
+                display: "flex", alignItems: "center",
+                gap: 8, marginBottom: 6,
+              }}>
+                <Avatar name={u.name || c.authorEmail} color={u.color || GOLD} size={22} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "#fff" }}>
+                    {u.name || c.authorEmail}
+                  </div>
+                  <div style={{
+                    fontSize: 9, color: "rgba(255,255,255,0.3)",
+                    fontFamily: "'DM Mono',monospace",
+                  }}>
+                    {timeAgo(c.createdAt)}
+                    {c.editedAt && <span style={{ marginLeft: 6 }}>(edited)</span>}
+                  </div>
+                </div>
+                {canModify(c) && !isEditing && (
+                  <div style={{ display: "flex", gap: 5 }}>
+                    <button
+                      onClick={() => { setEditingId(c.id); setEditText(c.body); }}
+                      style={{
+                        background: "none",
+                        border: `1px solid ${GOLD}44`,
+                        borderRadius: 4, color: GOLD,
+                        fontSize: 9, cursor: "pointer",
+                        padding: "2px 7px",
+                        fontFamily: "'DM Mono',monospace",
+                      }}
+                    >
+                      EDIT
+                    </button>
+                    <button
+                      onClick={() => deleteComment(c.id)}
+                      style={{
+                        background: "none",
+                        border: `1px solid ${RED}44`,
+                        borderRadius: 4, color: RED,
+                        fontSize: 9, cursor: "pointer",
+                        padding: "2px 7px",
+                        fontFamily: "'DM Mono',monospace",
+                      }}
+                    >
+                      DELETE
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {isEditing ? (
+                <div>
+                  <textarea
+                    value={editText}
+                    onChange={e => setEditText(e.target.value)}
+                    rows={2}
+                    style={{
+                      width: "100%", padding: "7px 10px",
+                      background: "rgba(255,255,255,0.04)",
+                      border: `1px solid ${GOLD}`,
+                      borderRadius: 6, color: "#fff",
+                      fontSize: 12, resize: "vertical",
+                      outline: "none", marginBottom: 7,
+                      fontFamily: "'Sora',sans-serif",
+                    }}
+                  />
+                  <div style={{ display: "flex", gap: 7 }}>
+                    <button
+                      onClick={() => saveEdit(c.id)}
+                      style={{
+                        padding: "4px 12px",
+                        background: TEAL, border: "none",
+                        borderRadius: 5, color: BG,
+                        fontSize: 10, cursor: "pointer",
+                        fontWeight: 700,
+                        fontFamily: "'DM Mono',monospace",
+                      }}
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => { setEditingId(null); setEditText(""); }}
+                      style={{
+                        padding: "4px 10px",
+                        background: "rgba(255,255,255,0.06)",
+                        border: `1px solid ${BORDER}`,
+                        borderRadius: 5, color: "rgba(255,255,255,0.5)",
+                        fontSize: 10, cursor: "pointer",
+                        fontFamily: "'DM Mono',monospace",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p style={{
+                  fontSize: 12, color: "rgba(255,255,255,0.65)",
+                  lineHeight: 1.6, margin: 0,
+                }}>
+                  {c.body}
+                </p>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+};
 const ProjectFlowPanel = ({ p, user, allUsers, load }) => {
   const flowSteps = p.flow || [];
   const [showFlowAdd, setShowFlowAdd] = useState(false);
@@ -4704,7 +4970,7 @@ const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", 
                       />
                     )}
                   </div>
-                  <TaskUploadSection
+                 <TaskUploadSection
   projectId={p.id}
   taskId={task.id}
   taskTitle={task.title}
@@ -4712,6 +4978,12 @@ const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", 
   allUsers={allUsers}
   canUpload={user.role === "admin" || task.assignee === user.email}
   viewerRole={user.role}
+/>
+                  <ProjectComments
+  projectId={p.id}
+  taskId={task.id}
+  user={user}
+  allUsers={allUsers}
 />
                   </div>
                 );
@@ -4832,6 +5104,23 @@ const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", 
                 </div>
               ))}
             </div>
+
+            {/* Project-level comments */}
+            <div style={{
+              background: CARD,
+              border: `1px solid ${BORDER}`,
+              borderRadius: 12,
+              padding: 18,
+              marginTop: 16,
+            }}>
+              <ProjectComments
+                projectId={p.id}
+                taskId={null}
+                user={user}
+                allUsers={allUsers}
+              />
+            </div>
+
           </div>
         </div>
 
