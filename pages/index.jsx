@@ -7518,7 +7518,20 @@ const ActivityChat = ({ user, setGlobalCall = () => {} }) => {
 
   const load = () => {
     setMessages(store.get(KEYS.messages) || []);
-    setActivity((store.get(KEYS.activity) || []).slice(0, 100));
+    const rawActivity = store.get(KEYS.activity) || [];
+  const mappedActivity = rawActivity.map(a => {
+    if (a.action === "assigned a private task:") {
+      if (user.role === "admin") return a;
+      const allUsers = store.get(KEYS.users) || {};
+      const projects = store.get(KEYS.projects) || [];
+      const privateProject = projects.find(p => p.id === "__admin_private__");
+      const assignedTask = privateProject?.tasks?.find(t => t.title === a.target);
+      const assigneeName = allUsers[assignedTask?.assignee]?.name || "a team member";
+      return { ...a, action: "assigned a private task to", target: assigneeName };
+    }
+    return a;
+  });
+  setActivity(mappedActivity.slice(0, 100));
     setAllUsers(store.get(KEYS.users) || {});
     setGroups(store.get(KEYS.groups) || []);
   };
