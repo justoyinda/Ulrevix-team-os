@@ -4908,295 +4908,132 @@ const editTask = (projectId, taskId) => {
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <div
-                      style={{
-                        width: 16,
-                        height: 16,
-                        borderRadius: 4,
-                        border: `2px solid ${statusColor(task.status)}`,
-                        background:
-                          task.status === "Completed"
-                            ? statusColor(task.status) + "33"
-                            : "transparent",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 9,
-                        color: statusColor(task.status),
-                        flexShrink: 0,
-                      }}
-                    >
-                      {task.status === "Completed" ? "✓" : ""}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div
                         style={{
-                          fontSize: 13,
-                          fontWeight: 500,
-                          color:
-                            task.status === "Completed"
-                              ? "rgba(255,255,255,0.35)"
-                              : "#fff",
-                          textDecoration:
-                            task.status === "Completed"
-                              ? "line-through"
-                              : "none",
+                          width: 16,
+                          height: 16,
+                          borderRadius: 4,
+                          border: `2px solid ${statusColor(task.status)}`,
+                          background: task.status === "Completed" ? statusColor(task.status) + "33" : "transparent",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 9,
+                          color: statusColor(task.status),
+                          flexShrink: 0,
                         }}
                       >
-                        {task.title}
-                        {(task.isPrivate || task.isProjectPrivate) && <span style={{ marginLeft: 6, fontSize: 10, color: PURPLE, fontFamily: "'DM Mono',monospace", background: PURPLE + "18", border: `1px solid ${PURPLE}44`, borderRadius: 4, padding: "1px 6px" }}>🔒 PRIVATE</span>}
+                        {task.status === "Completed" ? "✓" : ""}
                       </div>
-                      {task.deadline && (
-                        <div
-                          style={{
-                            fontSize: 10,
-                            color: "rgba(255,255,255,0.25)",
-                            fontFamily: "'DM Mono',monospace",
-                            marginTop: 2,
-                          }}
-                        >
-                          Due {task.deadline}
-                        </div>
-                      )}
-                    </div>
-                    {task.assignee && (
-                      <Avatar
-                        name={assigneeUser.name || task.assignee}
-                        color={assigneeUser.color || GOLD}
-                        size={24}
-                      />
-                    )}
-                    {canEdit && (
-                      <select
-                        value={task.status}
-                        onChange={(e) =>
-                          updateTaskStatus(p.id, task.id, e.target.value)
-                        }
-                        style={{
-                          background: "rgba(255,255,255,0.06)",
-                          border: `1px solid ${BORDER}`,
-                          borderRadius: 6,
-                          color: "#fff",
-                          fontSize: 11,
-                          padding: "4px 8px",
-                          cursor: "pointer",
-                          fontFamily: "'DM Mono',monospace",
-                        }}
-                      >
-                        {["Not Started", "In Progress", "Completed"].map(
-                          (s) => (
-                            <option key={s} value={s}>
-                              {s}
-                            </option>
-                          )
-                        )}
-                      </select>
-                    )}
-                    {!canEdit && (
-                      <Badge
-                        text={task.status}
-                        color={statusColor(task.status)}
-                      />
-                    )}
-                    {user.role === "admin" && (
-                      <div style={{ display: "flex", gap: 5 }}>
-                        <button
-                          onClick={() => {
-                            setEditingTaskId(task.id);
-                            setEditTaskForm({
-                              title: task.title,
-                              assignee: task.assignee || "",
-                              deadline: task.deadline || "",
-                            });
-                          }}
-                          style={{
-                            background: "none",
-                            border: `1px solid ${GOLD}44`,
-                            borderRadius: 4,
-                            color: GOLD,
-                            fontSize: 9,
-                            cursor: "pointer",
-                            padding: "2px 7px",
-                            fontFamily: "'DM Mono',monospace",
-                          }}
-                        >
-                          EDIT
-                        </button>
-                        <button
-                          onClick={() => deleteTask(p.id, task.id, task.title)}
-                          style={{
-                            background: "none",
-                            border: `1px solid ${RED}44`,
-                            borderRadius: 4,
-                            color: RED,
-                            fontSize: 9,
-                            cursor: "pointer",
-                            padding: "2px 7px",
-                            fontFamily: "'DM Mono',monospace",
-                          }}
-                        >
-                          DELETE
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                 <TaskUploadSection
-  projectId={p.id}
-  taskId={task.id}
-  taskTitle={task.title}
-  uploaderEmail={user.email}
-  allUsers={allUsers}
-  canUpload={user.role === "admin" || task.assignee === user.email}
-  viewerRole={user.role}
-/>
-                  <ProjectComments
-  projectId={p.id}
-  taskId={task.id}
-  user={user}
-  allUsers={allUsers}
-/>
-                </div>
-              );
-            })
-          )}
-        </div>
-                );
-              })
-            )}
-          </div>
-
-          <div>
-            <div
-              style={{
-                fontSize: 11,
-                color: "rgba(255,255,255,0.3)",
-                marginBottom: 12,
-                fontFamily: "'DM Mono',monospace",
-                letterSpacing: "0.08em",
-              }}
-            >
-              CONTRIBUTIONS
-            </div>
-            <div
-              style={{
-                background: CARD,
-                border: `1px solid ${BORDER}`,
-                borderRadius: 12,
-                padding: 18,
-                marginBottom: 16,
-              }}
-            >
-              {contributions.length === 0 ? (
-                <div style={{ color: "rgba(255,255,255,0.2)", fontSize: 12 }}>
-                  No members assigned
-                </div>
-              ) : (
-                contributions.map(({ em, u, done, total, contrib }) => (
-                  <div key={em} style={{ marginBottom: 16 }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        marginBottom: 6,
-                      }}
-                    >
-                      <Avatar
-                        name={u.name || em}
-                        color={u.color || GOLD}
-                        size={26}
-                      />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div
                           style={{
-                            fontSize: 12,
-                            fontWeight: 600,
-                            color: "#fff",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
+                            fontSize: 13,
+                            fontWeight: 500,
+                            color: task.status === "Completed" ? "rgba(255,255,255,0.35)" : "#fff",
+                            textDecoration: task.status === "Completed" ? "line-through" : "none",
                           }}
                         >
-                          {(u.name || em).split(" ")[0]}
+                          {task.title}
+                          {(task.isPrivate || task.isProjectPrivate) && (
+                            <span style={{ marginLeft: 6, fontSize: 10, color: PURPLE, fontFamily: "'DM Mono',monospace", background: PURPLE + "18", border: `1px solid ${PURPLE}44`, borderRadius: 4, padding: "1px 6px" }}>
+                              🔒 PRIVATE
+                            </span>
+                          )}
                         </div>
-                        <div
+                        {task.deadline && (
+                          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontFamily: "'DM Mono',monospace", marginTop: 2 }}>
+                            Due {task.deadline}
+                          </div>
+                        )}
+                      </div>
+                      {task.assignee && (
+                        <Avatar name={assigneeUser.name || task.assignee} color={assigneeUser.color || GOLD} size={24} />
+                      )}
+                      {canEdit && (
+                        <select
+                          value={task.status}
+                          onChange={(e) => updateTaskStatus(p.id, task.id, e.target.value)}
                           style={{
-                            fontSize: 10,
-                            color: "rgba(255,255,255,0.25)",
+                            background: "rgba(255,255,255,0.06)",
+                            border: `1px solid ${BORDER}`,
+                            borderRadius: 6,
+                            color: "#fff",
+                            fontSize: 11,
+                            padding: "4px 8px",
+                            cursor: "pointer",
+                            fontFamily: "'DM Mono',monospace",
                           }}
                         >
-                          {done}/{total} tasks
+                          {["Not Started", "In Progress", "Completed"].map((s) => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                        </select>
+                      )}
+                      {!canEdit && (
+                        <Badge text={task.status} color={statusColor(task.status)} />
+                      )}
+                      {user.role === "admin" && (
+                        <div style={{ display: "flex", gap: 5 }}>
+                          <button
+                            onClick={() => {
+                              setEditingTaskId(task.id);
+                              setEditTaskForm({
+                                title: task.title,
+                                assignee: task.assignee || "",
+                                deadline: task.deadline || "",
+                              });
+                            }}
+                            style={{
+                              background: "none",
+                              border: `1px solid ${GOLD}44`,
+                              borderRadius: 4,
+                              color: GOLD,
+                              fontSize: 9,
+                              cursor: "pointer",
+                              padding: "2px 7px",
+                              fontFamily: "'DM Mono',monospace",
+                            }}
+                          >
+                            EDIT
+                          </button>
+                          <button
+                            onClick={() => deleteTask(p.id, task.id, task.title)}
+                            style={{
+                              background: "none",
+                              border: `1px solid ${RED}44`,
+                              borderRadius: 4,
+                              color: RED,
+                              fontSize: 9,
+                              cursor: "pointer",
+                              padding: "2px 7px",
+                              fontFamily: "'DM Mono',monospace",
+                            }}
+                          >
+                            DELETE
+                          </button>
                         </div>
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 800,
-                          color: u.color || GOLD,
-                        }}
-                      >
-                        {contrib}%
-                      </div>
+                      )}
                     </div>
-                    <ProgressBar pct={contrib} color={u.color || GOLD} />
+                    <TaskUploadSection
+                      projectId={p.id}
+                      taskId={task.id}
+                      taskTitle={task.title}
+                      uploaderEmail={user.email}
+                      allUsers={allUsers}
+                      canUpload={user.role === "admin" || task.assignee === user.email}
+                      viewerRole={user.role}
+                    />
+                    <ProjectComments
+                      projectId={p.id}
+                      taskId={task.id}
+                      user={user}
+                      allUsers={allUsers}
+                    />
                   </div>
-                ))
-              )}
-            </div>
-
-            <div
-              style={{
-                background: CARD,
-                border: `1px solid ${BORDER}`,
-                borderRadius: 12,
-                padding: 18,
-              }}
-            >
-              {[
-                ["Team", p.team],
-                ["Deadline", p.deadline],
-                ["Members", (p.members || []).length],
-                ["Tasks", (p.tasks || []).length],
-                [
-                  "Done",
-                  (p.tasks || []).filter((t) => t.status === "Completed")
-                    .length,
-                ],
-              ].map(([k, v]) => (
-                <div
-                  key={k}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    padding: "7px 0",
-                    borderBottom: `1px solid rgba(255,255,255,0.04)`,
-                    fontSize: 12,
-                  }}
-                >
-                  <span style={{ color: "rgba(255,255,255,0.3)" }}>{k}</span>
-                  <span style={{ color: "#fff", fontWeight: 500 }}>{v}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Project-level comments */}
-            <div style={{
-              background: CARD,
-              border: `1px solid ${BORDER}`,
-              borderRadius: 12,
-              padding: 18,
-              marginTop: 16,
-            }}>
-              <ProjectComments
-                projectId={p.id}
-                taskId={null}
-                user={user}
-                allUsers={allUsers}
-              />
-            </div>
-
-          </div>
-        </div>
+                );
+              })
+            )}
 
         <ProjectFlowPanel p={p} user={user} allUsers={allUsers} load={load} />
 
