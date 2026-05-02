@@ -4542,7 +4542,9 @@ if (file.size > MAX_DIRECT) {
 // ─── PROJECTS ─────────────────────────────────────────────────────────────────
 const Projects = ({ user }) => {
   const [showAddPrivateTask, setShowAddPrivateTask] = useState(false);
-const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", deadline: "" });
+  const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", deadline: "" });
+  const [editingTaskId, setEditingTaskId] = useState(null);
+  const [editTaskForm, setEditTaskForm] = useState({ title: "", assignee: "", deadline: "" });
   const [projects, setProjects] = useState([]);
   const [selected, setSelected] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -4621,7 +4623,34 @@ const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", 
     setShowAddTask(false);
     load();
   };
+const editTask = (projectId, taskId) => {
+    const ps = store.get(KEYS.projects) || [];
+    const pi = ps.findIndex(p => p.id === projectId);
+    if (pi < 0) return;
+    const ti = ps[pi].tasks.findIndex(t => t.id === taskId);
+    if (ti < 0) return;
+    ps[pi].tasks[ti].title = editTaskForm.title;
+    ps[pi].tasks[ti].assignee = editTaskForm.assignee;
+    ps[pi].tasks[ti].deadline = editTaskForm.deadline;
+    ps[pi].tasks[ti].updatedAt = new Date().toISOString();
+    saveProjects(ps);
+    addActivity(user.email, "edited task:", editTaskForm.title, projectId);
+    addNotif(editTaskForm.assignee, "task", `A task assigned to you has been updated: "${editTaskForm.title}"`);
+    setEditingTaskId(null);
+    setEditTaskForm({ title: "", assignee: "", deadline: "" });
+    load();
+  };
 
+  const deleteTask = (projectId, taskId, taskTitle) => {
+    if (!window.confirm(`Delete task "${taskTitle}"? This cannot be undone.`)) return;
+    const ps = store.get(KEYS.projects) || [];
+    const pi = ps.findIndex(p => p.id === projectId);
+    if (pi < 0) return;
+    ps[pi].tasks = ps[pi].tasks.filter(t => t.id !== taskId);
+    saveProjects(ps);
+    addActivity(user.email, "deleted task:", taskTitle, projectId);
+    load();
+  };
   const addPrivateTask = (projectId) => {
   if (!newPrivateTask.title.trim() || !newPrivateTask.assignee) return;
   const ps = store.get(KEYS.projects) || [];
@@ -4969,6 +4998,47 @@ const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", 
                         color={statusColor(task.status)}
                       />
                     )}
+                    {user.role === "admin" && (
+                      <div style={{ display: "flex", gap: 5 }}>
+                        <button
+                          onClick={() => {
+                            setEditingTaskId(task.id);
+                            setEditTaskForm({
+                              title: task.title,
+                              assignee: task.assignee || "",
+                              deadline: task.deadline || "",
+                            });
+                          }}
+                          style={{
+                            background: "none",
+                            border: `1px solid ${GOLD}44`,
+                            borderRadius: 4,
+                            color: GOLD,
+                            fontSize: 9,
+                            cursor: "pointer",
+                            padding: "2px 7px",
+                            fontFamily: "'DM Mono',monospace",
+                          }}
+                        >
+                          EDIT
+                        </button>
+                        <button
+                          onClick={() => deleteTask(p.id, task.id, task.title)}
+                          style={{
+                            background: "none",
+                            border: `1px solid ${RED}44`,
+                            borderRadius: 4,
+                            color: RED,
+                            fontSize: 9,
+                            cursor: "pointer",
+                            padding: "2px 7px",
+                            fontFamily: "'DM Mono',monospace",
+                          }}
+                        >
+                          DELETE
+                        </button>
+                      </div>
+                    )}
                   </div>
                  <TaskUploadSection
   projectId={p.id}
@@ -5126,12 +5196,55 @@ const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", 
 
         <ProjectFlowPanel p={p} user={user} allUsers={allUsers} load={load} />
 
-        {showAddTask && (
+        {editingTaskId && (
           <Modal
-            title="Add Task"
-            onClose={() => setShowAddTask(false)}
+            title="Edit Task"
+            onClose={() => { setEditingTaskId(null); setEditTaskForm({ title: "", assignee: "", deadline: "" }); }}
             width={420}
           >
+            <Inp
+              label="Task Title"
+              value={editTaskForm.title}
+              onChange={(v) => setEditTaskForm(f => ({ ...f, title: v }))}
+              placeholder="Task title..."
+            />
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 7, fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em" }}>
+                ASSIGN TO
+              </div>
+              <select
+                value={editTaskForm.assignee}
+                onChange={(e) => setEditTaskForm(f => ({ ...f, assignee: e.target.value }))}
+                style={{ width: "100%", padding: "11px 14px", background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}`, borderRadius: 8, color: "#fff", fontSize: 14 }}
+              >
+                <option value="">Select member</option>
+                {Object.entries(allUsers).map(([em, u]) => (
+                  <option key={em} value={em}>{u?.name || em}</option>
+                ))}
+              </select>
+            </div>
+            <Inp
+              label="Deadline"
+              value={editTaskForm.deadline}
+              onChange={(v) => setEditTaskForm(f => ({ ...f, deadline: v }))}
+              type="date"
+            />
+            <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+              <Btn
+                onClick={() => editTask(p.id, editingTaskId)}
+                style={{ flex: 1, background: TEAL, color: BG }}
+              >
+                Save Changes
+              </Btn>
+              <Btn
+                variant="secondary"
+                onClick={() => { setEditingTaskId(null); setEditTaskForm({ title: "", assignee: "", deadline: "" }); }}
+              >
+                Cancel
+              </Btn>
+            </div>
+          </Modal>
+        )}
             <Inp
               label="Task Title"
               value={newTask.title}
