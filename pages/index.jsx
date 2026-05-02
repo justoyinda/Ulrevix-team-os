@@ -3409,9 +3409,13 @@ const Dashboard = ({ user }) => {
     setProjects(store.get(KEYS.projects) || []);
     setUsers(store.get(KEYS.users) || {});
     const allActivity = (store.get(KEYS.activity) || []).map(a => {
-    if (a.action === "assigned a private task:" || a.action === "Assigned a private task:") {
+    if (a.action === "assigned a private task:") {
+      if (user.role === "admin") return a;
       const allUsers = store.get(KEYS.users) || {};
-      const assigneeName = allUsers[a.target]?.name || a.target;
+      const projects = store.get(KEYS.projects) || [];
+      const privateProject = projects.find(p => p.id === "__admin_private__");
+      const assignedTask = privateProject?.tasks?.find(t => t.title === a.target);
+      const assigneeName = allUsers[assignedTask?.assignee]?.name || "a team member";
       return { ...a, action: "assigned a private task to", target: assigneeName };
     }
     return a;
