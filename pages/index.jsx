@@ -6130,6 +6130,7 @@ const Team = ({ user }) => {
 
   useEffect(() => {
     const loadTeam = async () => {
+      setUsers(store.get(KEYS.users) || {});
       try {
         // Fetch users directly from Supabase users table
         // This is the most reliable source since deleteUserAccount
