@@ -3408,7 +3408,15 @@ const Dashboard = ({ user }) => {
   useEffect(() => {
     setProjects(store.get(KEYS.projects) || []);
     setUsers(store.get(KEYS.users) || {});
-    setActivity((store.get(KEYS.activity) || []).slice(0, 8));
+    const allActivity = store.get(KEYS.activity) || [];
+  const filteredActivity = allActivity.map(a => {
+    if (user.role === "admin") return a;
+    if (a.action === "assigned a private task to" || a.action === "assigned a private task:") {
+      return { ...a, action: "assigned a private task to", target: a.target };
+    }
+    return a;
+  });
+  setActivity(filteredActivity.slice(0, 8));
   }, []);
 
   const allTasks = projects.flatMap((p) => p.tasks || []);
