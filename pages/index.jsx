@@ -4563,6 +4563,7 @@ const Projects = ({ user }) => {
   const [showAddPrivateTask, setShowAddPrivateTask] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [editingPrivateProject, setEditingPrivateProject] = useState(false);
+  const [privateTaskUserFilter, setPrivateTaskUserFilter] = useState("all");
 const [privateProjectForm, setPrivateProjectForm] = useState({ name: "", description: "" });
 const [editTaskForm, setEditTaskForm] = useState({});
 const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", deadline: "" });
@@ -4689,13 +4690,12 @@ const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", 
   if (selected && selectedProject) {
     const p = selectedProject;
     const pct = calcPct(p.tasks);
-    const filtered = (taskFilter === "All" ? p.tasks : p.tasks.filter((t) => t.status === taskFilter))
+   const filtered = (taskFilter === "All" ? p.tasks : p.tasks.filter((t) => t.status === taskFilter))
   .filter((t) => {
-    if (t.isProjectPrivate) {
-      return user.role === "admin" || t.assignee === user.email;
-    }
-    if (t.isPrivate && !t.isProjectPrivate) {
-      return user.role === "admin" || t.assignee === user.email;
+    if (t.isProjectPrivate || t.isPrivate || t.isAdminPrivate) {
+      if (user.role !== "admin" && t.assignee !== user.email) return false;
+      if (user.role === "admin" && privateTaskUserFilter !== "all" && t.assignee !== privateTaskUserFilter) return false;
+      return true;
     }
     return true;
   });
@@ -4856,6 +4856,22 @@ const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", 
                   {f}
                 </button>
               ))}
+              {user.role === "admin" && (p.tasks || []).some(t => t.isPrivate || t.isProjectPrivate || t.isAdminPrivate) && (
+  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontFamily: "'DM Mono',monospace" }}>PRIVATE TASKS FOR:</span>
+    <select
+      value={privateTaskUserFilter}
+      onChange={(e) => setPrivateTaskUserFilter(e.target.value)}
+      style={{ padding: "4px 10px", background: "rgba(255,255,255,0.05)", border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", fontSize: 11, outline: "none", fontFamily: "'DM Mono',monospace" }}
+    >
+      <option value="all">All Users</option>
+      {[...new Set((p.tasks || []).filter(t => t.isPrivate || t.isProjectPrivate || t.isAdminPrivate).map(t => t.assignee))].map(em => {
+        const u = allUsers[em] || { name: em };
+        return <option key={em} value={em}>{u.name || em}</option>;
+      })}
+    </select>
+  </div>
+)}
               {(isContributor || user.role === "admin") && (
                 <Btn
                   onClick={() => setShowAddTask(true)}
