@@ -6267,9 +6267,16 @@ const Team = ({ user }) => {
   if (selected) {
     const em = selected;
     const u = users[em] || { name: em, color: GOLD };
-    const myTasks = allTasks.filter((t) => {
+   const privateTaskIds = new Set(
+    (allTasks.filter(t => {
+      const projects = store.get(KEYS.projects) || [];
+      const proj = projects.find(p => p.id === "__admin_private__");
+      return (proj?.tasks || []).some(pt => pt.id === t.id);
+    })).map(t => t.id)
+  );
+  const myTasks = allTasks.filter((t) => {
     if (t.assignee !== em) return false;
-    if (t.isAdminPrivate && user.role !== "admin") return false;
+    if ((t.isAdminPrivate || t.isPrivate || privateTaskIds.has(t.id)) && user.role !== "admin") return false;
     return true;
   });
     const done = myTasks.filter((t) => t.status === "Completed");
