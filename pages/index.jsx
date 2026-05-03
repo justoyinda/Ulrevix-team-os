@@ -10653,14 +10653,42 @@ const sessionStartHour = userPresence?.sessionStart
     })()
   : null;
 
-const activityHourSet = new Set(
-  userActivity.map((a) => {
-    const d = new Date(a.time);
-    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}`;
-  })
-);
-if (sessionStartHour) activityHourSet.add(sessionStartHour);
-const uniqueHours = activityHourSet.size;
+// Calculate total minutes from all activity events using 5-minute session windows
+  const activityTimes = userActivity
+    .map(a => new Date(a.time).getTime())
+    .sort((a, b) => a - b);
+
+  let totalMinutes = 0;
+  let sessionStart2 = null;
+  let lastTime = null;
+  const SESSION_GAP = 15 * 60 * 1000; // 15 minute gap = new session
+  const MIN_SESSION = 2 * 60 * 1000; // minimum 2 minutes per activity burst
+
+  activityTimes.forEach(t => {
+    if (!sessionStart2) {
+      sessionStart2 = t;
+      lastTime = t;
+    } else if (t - lastTime > SESSION_GAP) {
+      // Gap too large — end previous session and start new one
+      totalMinutes += Math.max((lastTime - sessionStart2) / 60000, 5);
+      sessionStart2 = t;
+      lastTime = t;
+    } else {
+      lastTime = t;
+    }
+  });
+  // Close last open session
+  if (sessionStart2 && lastTime) {
+    totalMinutes += Math.max((lastTime - sessionStart2) / 60000, 5);
+  }
+
+  // Also add current active session if user is online
+  if (presenceInfo?.online && presenceInfo?.sessionStart) {
+    const currentSessionMs = Date.now() - new Date(presenceInfo.sessionStart).getTime();
+    totalMinutes += currentSessionMs / 60000;
+  }
+
+  const uniqueHours = Math.round((totalMinutes / 60) * 10) / 10;
 
   const presenceInfo = presence[viewEmail];
   const lastSeen = presenceInfo?.lastSeen ? new Date(presenceInfo.lastSeen) : null;
@@ -10827,7 +10855,7 @@ useEffect(() => {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8 }}>
               <div>
                 <div style={{ fontSize: 28, fontWeight: 900, color: uniqueHours >= requiredHours ? TEAL : uniqueHours >= requiredHours * 0.6 ? GOLD : RED, lineHeight: 1 }}>
-                  {uniqueHours}
+                  {uniqueHours % 1 === 0 ? uniqueHours : uniqueHours.toFixed(1)}
                   <span style={{ fontSize: 13, color: "rgba(255,255,255,0.3)", fontWeight: 400, marginLeft: 4 }}>/ {requiredHours} hrs</span>
                 </div>
                 <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontFamily: "'DM Mono',monospace", marginTop: 4 }}>
