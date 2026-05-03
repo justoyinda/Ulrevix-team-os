@@ -10653,42 +10653,37 @@ const sessionStartHour = userPresence?.sessionStart
     })()
   : null;
 
-// Calculate total minutes from all activity events using 5-minute session windows
-  const activityTimes = userActivity
+const actTimes = userActivity
     .map(a => new Date(a.time).getTime())
     .sort((a, b) => a - b);
 
-  let totalMinutes = 0;
-  let sessionStart2 = null;
-  let lastTime = null;
-  const SESSION_GAP = 15 * 60 * 1000; // 15 minute gap = new session
-  const MIN_SESSION = 2 * 60 * 1000; // minimum 2 minutes per activity burst
+  let totalMins = 0;
+  let sessStart = null;
+  let lastActTime = null;
+  const SGAP = 15 * 60 * 1000;
 
-  activityTimes.forEach(t => {
-    if (!sessionStart2) {
-      sessionStart2 = t;
-      lastTime = t;
-    } else if (t - lastTime > SESSION_GAP) {
-      // Gap too large — end previous session and start new one
-      totalMinutes += Math.max((lastTime - sessionStart2) / 60000, 5);
-      sessionStart2 = t;
-      lastTime = t;
+  actTimes.forEach(t => {
+    if (!sessStart) {
+      sessStart = t;
+      lastActTime = t;
+    } else if (t - lastActTime > SGAP) {
+      totalMins += Math.max((lastActTime - sessStart) / 60000, 5);
+      sessStart = t;
+      lastActTime = t;
     } else {
-      lastTime = t;
+      lastActTime = t;
     }
   });
-  // Close last open session
-  if (sessionStart2 && lastTime) {
-    totalMinutes += Math.max((lastTime - sessionStart2) / 60000, 5);
+  if (sessStart && lastActTime) {
+    totalMins += Math.max((lastActTime - sessStart) / 60000, 5);
   }
 
-  // Also add current active session if user is online
   if (presenceInfo?.online && presenceInfo?.sessionStart) {
-    const currentSessionMs = Date.now() - new Date(presenceInfo.sessionStart).getTime();
-    totalMinutes += currentSessionMs / 60000;
+    const curSessMs = Date.now() - new Date(presenceInfo.sessionStart).getTime();
+    totalMins += curSessMs / 60000;
   }
 
-  const uniqueHours = Math.round((totalMinutes / 60) * 10) / 10;
+  const uniqueHours = Math.round((totalMins / 60) * 10) / 10;
 
   const presenceInfo = presence[viewEmail];
   const lastSeen = presenceInfo?.lastSeen ? new Date(presenceInfo.lastSeen) : null;
