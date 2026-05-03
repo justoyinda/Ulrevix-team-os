@@ -10653,37 +10653,14 @@ const sessionStartHour = userPresence?.sessionStart
     })()
   : null;
 
-const actTimes = userActivity
-    .map(a => new Date(a.time).getTime())
-    .sort((a, b) => a - b);
-
-  let totalMins = 0;
-  let sessStart = null;
-  let lastActTime = null;
-  const SGAP = 15 * 60 * 1000;
-
-  actTimes.forEach(t => {
-    if (!sessStart) {
-      sessStart = t;
-      lastActTime = t;
-    } else if (t - lastActTime > SGAP) {
-      totalMins += Math.max((lastActTime - sessStart) / 60000, 5);
-      sessStart = t;
-      lastActTime = t;
-    } else {
-      lastActTime = t;
-    }
-  });
-  if (sessStart && lastActTime) {
-    totalMins += Math.max((lastActTime - sessStart) / 60000, 5);
-  }
-
-  if (presenceInfo?.online && presenceInfo?.sessionStart) {
-    const curSessMs = Date.now() - new Date(presenceInfo.sessionStart).getTime();
-    totalMins += curSessMs / 60000;
-  }
-
-  const uniqueHours = Math.round((totalMins / 60) * 10) / 10;
+const activityHourSet = new Set(
+  userActivity.map((a) => {
+    const d = new Date(a.time);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}`;
+  })
+);
+if (sessionStartHour) activityHourSet.add(sessionStartHour);
+const uniqueHours = activityHourSet.size;
 
   const presenceInfo = presence[viewEmail];
   const lastSeen = presenceInfo?.lastSeen ? new Date(presenceInfo.lastSeen) : null;
@@ -10850,7 +10827,7 @@ useEffect(() => {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8 }}>
               <div>
                 <div style={{ fontSize: 28, fontWeight: 900, color: uniqueHours >= requiredHours ? TEAL : uniqueHours >= requiredHours * 0.6 ? GOLD : RED, lineHeight: 1 }}>
-                  {uniqueHours % 1 === 0 ? uniqueHours : uniqueHours.toFixed(1)}
+                  {uniqueHours}
                   <span style={{ fontSize: 13, color: "rgba(255,255,255,0.3)", fontWeight: 400, marginLeft: 4 }}>/ {requiredHours} hrs</span>
                 </div>
                 <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontFamily: "'DM Mono',monospace", marginTop: 4 }}>
