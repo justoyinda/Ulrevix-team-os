@@ -6267,7 +6267,11 @@ const Team = ({ user }) => {
   if (selected) {
     const em = selected;
     const u = users[em] || { name: em, color: GOLD };
-    const myTasks = allTasks.filter((t) => t.assignee === em);
+    const myTasks = allTasks.filter((t) => {
+    if (t.assignee !== em) return false;
+    if (t.isAdminPrivate && user.role !== "admin") return false;
+    return true;
+  });
     const done = myTasks.filter((t) => t.status === "Completed");
     const active = myTasks.filter((t) => t.status === "In Progress");
     const pending = myTasks.filter((t) => t.status === "Not Started");
