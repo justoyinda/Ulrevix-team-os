@@ -3779,6 +3779,7 @@ const ProjectComments = ({ projectId, taskId = null, user, allUsers }) => {
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState("");
   const [loading, setLoading] = useState(false);
+  const [pinningId, setPinningId] = useState(null);
 
   const storageKey = taskId
     ? `${KEYS.projectComments}_${projectId}_task_${taskId}`
@@ -3855,6 +3856,12 @@ const ProjectComments = ({ projectId, taskId = null, user, allUsers }) => {
 
   const canModify = (comment) =>
     user.role === "admin" || comment.authorEmail === user.email;
+  const pinComment = async (id) => {
+    const updated = comments.map(c =>
+      c.id === id ? { ...c, pinned: !c.pinned } : c
+    );
+    await saveComments(updated);
+  };
 
   return (
     <div style={{ marginTop: taskId ? 12 : 0 }}>
@@ -3919,7 +3926,11 @@ const ProjectComments = ({ projectId, taskId = null, user, allUsers }) => {
           No comments yet.
         </div>
       ) : (
-        comments.map(c => {
+        [...comments].sort((a, b) => {
+          if (a.pinned && !b.pinned) return -1;
+          if (!a.pinned && b.pinned) return 1;
+          return 0;
+        }).map(c => {
           const isEditing = editingId === c.id;
           const u = allUsers[c.authorEmail] || { name: c.authorEmail, color: GOLD };
           return (
@@ -3946,6 +3957,24 @@ const ProjectComments = ({ projectId, taskId = null, user, allUsers }) => {
                     {c.editedAt && <span style={{ marginLeft: 6 }}>(edited)</span>}
                   </div>
                 </div>
+                {!isEditing && (
+                  <button
+                    onClick={() => pinComment(c.id)}
+                    title={c.pinned ? "Unpin comment" : "Pin comment"}
+                    style={{
+                      background: c.pinned ? GOLD + "22" : "none",
+                      border: c.pinned ? `1px solid ${GOLD}44` : `1px solid ${BORDER}`,
+                      borderRadius: 4,
+                      color: c.pinned ? GOLD : "rgba(255,255,255,0.3)",
+                      fontSize: 9,
+                      cursor: "pointer",
+                      padding: "2px 7px",
+                      fontFamily: "'DM Mono',monospace",
+                    }}
+                  >
+                    {c.pinned ? "📌 PINNED" : "📌 PIN"}
+                  </button>
+                )}
                 {canModify(c) && !isEditing && (
                   <div style={{ display: "flex", gap: 5 }}>
                     <button
