@@ -6274,17 +6274,20 @@ const Team = ({ user }) => {
       return (proj?.tasks || []).some(pt => pt.id === t.id);
     })).map(t => t.id)
   );
-  const myTasks = allTasks.filter((t) => {
-    if (t.assignee !== em) return false;
-    if ((t.isAdminPrivate || t.isPrivate || privateTaskIds.has(t.id)) && user.role !== "admin") return false;
+  const myTasks = allTasks.filter((t) => t.assignee === em);
+  const visibleTasks = user.role === "admin" ? myTasks : myTasks.filter((t) => {
+    if (t.isAdminPrivate || t.isPrivate || privateTaskIds.has(t.id)) return false;
     return true;
   });
     const done = myTasks.filter((t) => t.status === "Completed");
-    const active = myTasks.filter((t) => t.status === "In Progress");
-    const pending = myTasks.filter((t) => t.status === "Not Started");
-    const score = myTasks.length
-      ? Math.round((done.length / myTasks.length) * 100)
-      : 0;
+  const active = myTasks.filter((t) => t.status === "In Progress");
+  const pending = myTasks.filter((t) => t.status === "Not Started");
+  const score = myTasks.length
+    ? Math.round((done.length / myTasks.length) * 100)
+    : 0;
+  const visibleDone = visibleTasks.filter((t) => t.status === "Completed");
+  const visibleActive = visibleTasks.filter((t) => t.status === "In Progress");
+  const visiblePending = visibleTasks.filter((t) => t.status === "Not Started");
 
     return (
       <div style={{ padding: 28, overflowY: "auto", flex: 1 }}>
@@ -6352,8 +6355,8 @@ const Team = ({ user }) => {
         >
           {[
             { label: "Total Tasks", val: myTasks.length, c: GOLD },
-            { label: "Completed", val: done.length, c: TEAL },
-            { label: "Active", val: active.length, c: PURPLE },
+          { label: "Completed", val: done.length, c: TEAL },
+          { label: "Active", val: active.length, c: PURPLE },
           ].map(({ label, val, c }) => (
             <div
               key={label}
@@ -6384,11 +6387,11 @@ const Team = ({ user }) => {
         </div>
 
         {[
-          { label: "COMPLETED TASKS", tasks: done, color: TEAL },
-          { label: "IN PROGRESS", tasks: active, color: GOLD },
+         { label: "COMPLETED TASKS", tasks: visibleDone, color: TEAL },
+          { label: "IN PROGRESS", tasks: visibleActive, color: GOLD },
           {
             label: "NOT STARTED",
-            tasks: pending,
+            tasks: visiblePending,
             color: "rgba(255,255,255,0.25)",
           },
         ].map(
