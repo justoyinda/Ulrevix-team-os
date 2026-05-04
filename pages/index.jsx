@@ -8847,6 +8847,26 @@ if (activeCall?.type === "outgoing") {
             ) : (
               activity.map((a, i) => {
                 const u = allUsers[a.userId] || { name: a.userId, color: GOLD };
+
+                // Sanitize private task activity for non-admin users
+                let displayAction = a.action;
+                let displayTarget = a.target;
+                if (user.role !== "admin") {
+                  const projects = store.get(KEYS.projects) || [];
+                  const allTasks = projects.flatMap(p => p.tasks || []);
+                  const matchedTask = allTasks.find(t => t.title === a.target && (t.isPrivate || t.isProjectPrivate || t.isAdminPrivate));
+                  if (matchedTask) {
+                    if (matchedTask.assignee === user.email) {
+                      displayAction = a.action.replace(a.target, "your private task");
+                      displayTarget = "your private task";
+                    } else {
+                      const assigneeName = allUsers[matchedTask.assignee]?.name || "a team member";
+                      displayAction = a.action.includes("marked") ? `marked a private task as ${a.action.split("as ")[1]?.split(":")[0]} for` : a.action;
+                      displayTarget = assigneeName;
+                    }
+                  }
+                }
+
                 return (
                   <div
                     key={a.id}
@@ -8873,9 +8893,9 @@ if (activeCall?.type === "outgoing") {
                         <span style={{ color: "#fff", fontWeight: 600 }}>
                           {(u.name || a.userId).split(" ")[0]}
                         </span>{" "}
-                        {a.action}{" "}
-                        {a.target && (
-                          <span style={{ color: GOLD }}>{a.target}</span>
+                        {displayAction}{" "}
+                        {displayTarget && (
+                          <span style={{ color: GOLD }}>{displayTarget}</span>
                         )}
                       </div>
                       <div
@@ -8883,7 +8903,6 @@ if (activeCall?.type === "outgoing") {
                           fontSize: 10,
                           color: "rgba(255,255,255,0.2)",
                           fontFamily: "'DM Mono',monospace",
-                          marginTop: 2,
                         }}
                       >
                         {timeAgo(a.time)}
