@@ -7595,7 +7595,7 @@ const ActivityChat = ({ user, setGlobalCall = () => {} }) => {
       return { ...a, action: "assigned a private task to", target: assigneeName };
     }
     return a;
-  });
+  }).filter(Boolean);
   setActivity(mappedActivity.slice(0, 100));
     setAllUsers(store.get(KEYS.users) || {});
     setGroups(store.get(KEYS.groups) || []);
