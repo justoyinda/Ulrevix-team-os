@@ -3409,25 +3409,33 @@ const Dashboard = ({ user }) => {
     setProjects(store.get(KEYS.projects) || []);
     setUsers(store.get(KEYS.users) || {});
     const allActivity = (store.get(KEYS.activity) || []).map(a => {
-    if (a.action === "assigned a private task:") {
-      if (user.role === "admin") return a;
-      const allUsers = store.get(KEYS.users) || {};
-      const projects = store.get(KEYS.projects) || [];
-      const privateProject = projects.find(p => p.id === "__admin_private__");
-      const assignedTask = privateProject?.tasks?.find(t => t.title === a.target);
-      const assigneeName = allUsers[assignedTask?.assignee]?.name || "a team member";
-      return { ...a, action: "assigned a private task to", target: assigneeName };
-    }
-    return a;
-  });
-  const filteredActivity = allActivity.map(a => {
+  if (a.action === "assigned a private task:") {
     if (user.role === "admin") return a;
-    if (a.action === "assigned a private task to" || a.action === "assigned a private task:") {
-      return { ...a, action: "assigned a private task to", target: a.target };
-    }
-    return a;
-  });
-  setActivity(filteredActivity.slice(0, 8));
+    const allUsers = store.get(KEYS.users) || {};
+    const projects = store.get(KEYS.projects) || [];
+    const privateProject = projects.find(p => p.id === "__admin_private__");
+    const assignedTask = privateProject?.tasks?.find(t => t.title === a.target);
+    const assigneeName = allUsers[assignedTask?.assignee]?.name || "a team member";
+    return { ...a, action: "assigned a private task to", target: assigneeName };
+  }
+  if (a.action?.startsWith("updated a private task status") || a.action?.startsWith("marked task as") ) {
+    if (user.role === "admin") return a;
+    // Check if target is a task title belonging to a private task
+    const projects = store.get(KEYS.projects) || [];
+    const allTasks = projects.flatMap(p => p.tasks || []);
+    const matchedTask = allTasks.find(t => t.title === a.target && (t.isPrivate || t.isProjectPrivate || t.isAdminPrivate));
+    if (matchedTask && matchedTask.assignee !== user.email) return null;
+  }
+  return a;
+}).filter(Boolean);
+const filteredActivity = allActivity.map(a => {
+  if (user.role === "admin") return a;
+  if (a.action === "assigned a private task to" || a.action === "assigned a private task:") {
+    return { ...a, action: "assigned a private task to", target: a.target };
+  }
+  return a;
+});
+setActivity(filteredActivity.slice(0, 8));
   }, []);
 
   const allTasks = projects.flatMap((p) => p.tasks || []);
