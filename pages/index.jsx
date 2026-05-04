@@ -4401,7 +4401,16 @@ if (file.size > MAX_DIRECT) {
     try {
       await saveTaskUpload(projectId, taskId, file, uploaderEmail);
       await load();
-      addActivity(uploaderEmail, "uploaded task file for:", taskTitle, projectId);
+      const isPrivate = (() => { const projects = store.get(KEYS.projects) || []; const allTasks = projects.flatMap(p => p.tasks || []); const t = allTasks.find(t => t.title === taskTitle); return t && (t.isPrivate || t.isProjectPrivate || t.isAdminPrivate); })();
+if (isPrivate && uploaderEmail === ADMIN_EMAIL) {
+  const projects = store.get(KEYS.projects) || [];
+  const allTasks = projects.flatMap(p => p.tasks || []);
+  const task = allTasks.find(t => t.title === taskTitle);
+  const assigneeName = (store.get(KEYS.users) || {})[task?.assignee]?.name || task?.assignee || "a team member";
+  addActivity(uploaderEmail, "uploaded a file for a private task assigned to", assigneeName, null);
+} else {
+  addActivity(uploaderEmail, "uploaded task file for:", taskTitle, projectId);
+}
       addNotif(ADMIN_EMAIL, "task", `${uploaderEmail} uploaded a file for task: "${taskTitle}"`);
     } catch (err) {
       setUploadErr("Upload failed. File may be too large for browser storage.");
@@ -4435,7 +4444,16 @@ if (file.size > MAX_DIRECT) {
           if (error) console.error("Link sync error:", error);
         });
       load();
-      addActivity(uploaderEmail, "submitted task link for:", taskTitle, projectId);
+      const isPrivateLink = (() => { const projects = store.get(KEYS.projects) || []; const allTasks = projects.flatMap(p => p.tasks || []); const t = allTasks.find(t => t.title === taskTitle); return t && (t.isPrivate || t.isProjectPrivate || t.isAdminPrivate); })();
+if (isPrivateLink && uploaderEmail === ADMIN_EMAIL) {
+  const projects = store.get(KEYS.projects) || [];
+  const allTasks = projects.flatMap(p => p.tasks || []);
+  const task = allTasks.find(t => t.title === taskTitle);
+  const assigneeName = (store.get(KEYS.users) || {})[task?.assignee]?.name || task?.assignee || "a team member";
+  addActivity(uploaderEmail, "submitted a link for a private task assigned to", assigneeName, null);
+} else {
+  addActivity(uploaderEmail, "submitted task link for:", taskTitle, projectId);
+}
       addNotif(ADMIN_EMAIL, "task", `${uploaderEmail} submitted a link for task: "${taskTitle}"`);
       setLinkInput("");
       setShowLinkInput(false);
