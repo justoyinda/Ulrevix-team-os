@@ -3418,14 +3418,6 @@ const Dashboard = ({ user }) => {
     const assigneeName = allUsers[assignedTask?.assignee]?.name || "a team member";
     return { ...a, action: "assigned a private task to", target: assigneeName };
   }
-  if (a.action?.startsWith("updated a private task status") || a.action?.startsWith("marked task as") ) {
-    if (user.role === "admin") return a;
-    // Check if target is a task title belonging to a private task
-    const projects = store.get(KEYS.projects) || [];
-    const allTasks = projects.flatMap(p => p.tasks || []);
-    const matchedTask = allTasks.find(t => t.title === a.target && (t.isPrivate || t.isProjectPrivate || t.isAdminPrivate));
-    if (matchedTask && matchedTask.assignee !== user.email) return null;
-  }
   return a;
 }).filter(Boolean);
 const filteredActivity = allActivity.map(a => {
