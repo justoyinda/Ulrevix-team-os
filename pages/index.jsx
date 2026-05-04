@@ -4650,8 +4650,14 @@ const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", 
     ps[pi].tasks[ti].status = newStatus;
     ps[pi].tasks[ti].updatedAt = new Date().toISOString();
     saveProjects(ps);
-    addActivity(user.email, `marked task as ${newStatus}:`, ps[pi].tasks[ti].title, projectId);
-    addNotif(ADMIN_EMAIL, "task", `${user.email} marked "${ps[pi].tasks[ti].title}" as ${newStatus}`);
+const isPrivateTask = ps[pi].tasks[ti].isPrivate || ps[pi].tasks[ti].isProjectPrivate || ps[pi].tasks[ti].isAdminPrivate;
+if (isPrivateTask && user.role === "admin") {
+  const assigneeName = (store.get(KEYS.users) || {})[ps[pi].tasks[ti].assignee]?.name || ps[pi].tasks[ti].assignee;
+  addActivity(user.email, `updated a private task status to ${newStatus} for`, assigneeName, null);
+} else {
+  addActivity(user.email, `marked task as ${newStatus}:`, ps[pi].tasks[ti].title, projectId);
+}
+addNotif(ADMIN_EMAIL, "task", `${user.email} marked a task as ${newStatus}`);
   };
 
   const addTask = (projectId) => {
