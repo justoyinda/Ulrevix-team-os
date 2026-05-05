@@ -4536,16 +4536,68 @@ if (isPrivateLink && uploaderEmail === ADMIN_EMAIL) {
             )}
           </div>
           {isAdmin && (
-            <AdminUploadReview
-              uploadId={u.id}
-              projectId={projectId}
-              taskId={taskId}
-              uploadedBy={u.uploadedBy}
-              currentStatus={uploadStatus}
-              currentFeedback={reviewData?.feedback || ""}
-              onReviewed={load}
-              adminEmail={uploaderEmail}
-            />
+            <div>
+              <AdminUploadReview
+                uploadId={u.id}
+                projectId={projectId}
+                taskId={taskId}
+                uploadedBy={u.uploadedBy}
+                currentStatus={uploadStatus}
+                currentFeedback={reviewData?.feedback || ""}
+                onReviewed={load}
+                adminEmail={uploaderEmail}
+              />
+              <button
+                onClick={async () => {
+                  if (!window.confirm("Delete this upload? If no uploads remain and the task is Completed, it will revert to Not Started.")) return;
+                  const key = `${KEYS.taskUploads}_${projectId}_${taskId}`;
+                  const existing = store.get(key) || [];
+                  const updated = existing.filter(up => up.id !== u.id);
+                  store.set(key, updated);
+                  await supabase.from("platform_data").upsert(
+                    { key, value: updated, updated_at: new Date().toISOString() },
+                    { onConflict: "key" }
+                  );
+                  const reviewKey = `${KEYS.taskUploadReviews}_${projectId}_${taskId}_${u.id}`;
+                  store.set(reviewKey, null);
+                  await supabase.from("platform_data").upsert(
+                    { key: reviewKey, value: null, updated_at: new Date().toISOString() },
+                    { onConflict: "key" }
+                  );
+                  if (updated.length === 0) {
+                    const projects = store.get(KEYS.projects) || [];
+                    const pi = projects.findIndex(p => p.id === projectId);
+                    if (pi >= 0) {
+                      const ti = projects[pi].tasks.findIndex(t => t.id === taskId);
+                      if (ti >= 0 && projects[pi].tasks[ti].status === "Completed") {
+                        projects[pi].tasks[ti].status = "Not Started";
+                        projects[pi].tasks[ti].updatedAt = new Date().toISOString();
+                        store.set(KEYS.projects, projects);
+                        await supabase.from("platform_data").upsert(
+                          { key: KEYS.projects, value: projects, updated_at: new Date().toISOString() },
+                          { onConflict: "key" }
+                        );
+                        addNotif(projects[pi].tasks[ti].assignee, "task", `Your task "${projects[pi].tasks[ti].title}" has been reverted to Not Started because your upload was deleted by admin.`);
+                      }
+                    }
+                  }
+                  await load();
+                }}
+                style={{
+                  marginTop: 8,
+                  padding: "4px 12px",
+                  background: RED + "22",
+                  border: `1px solid ${RED}44`,
+                  borderRadius: 6,
+                  color: RED,
+                  fontSize: 10,
+                  cursor: "pointer",
+                  fontFamily: "'DM Mono',monospace",
+                }}
+              >
+                🗑 Delete Upload
+              </button>
+            </div>
           )}
         </div>
       );
