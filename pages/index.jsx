@@ -2316,10 +2316,12 @@ const MemberSpotlight = ({ currentUser }) => {
 
   useEffect(() => {
     const allUsers = store.get(KEYS.users) || {};
-    const scored = Object.entries(allUsers).map(([email, u]) => {
-      const score = calculateMemberScore(email, period);
-      return { email, user: u, ...score };
-    });
+    const scored = Object.entries(allUsers)
+      .filter(([email]) => email !== ADMIN_EMAIL)
+      .map(([email, u]) => {
+        const score = calculateMemberScore(email, period);
+        return { email, user: u, ...score };
+      });
     scored.sort((a, b) => b.total - a.total);
     setRankings(scored);
     setSpotlight(scored[0] || null);
