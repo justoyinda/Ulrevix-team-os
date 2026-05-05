@@ -5172,7 +5172,7 @@ addNotif(ADMIN_EMAIL, "task", `${user.email} marked a task as ${newStatus}`);
       type="date"
     />
     <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-      <Btn
+     <Btn
         onClick={() => {
           const ps = store.get(KEYS.projects) || [];
           const pi = ps.findIndex(p2 => p2.id === editingTask.projectId);
@@ -5184,6 +5184,7 @@ addNotif(ADMIN_EMAIL, "task", `${user.email} marked a task as ${newStatus}`);
           ps[pi].tasks[ti].deadline = editTaskForm.deadline;
           ps[pi].tasks[ti].updatedAt = new Date().toISOString();
           saveProjects(ps);
+          addNotif(ps[pi].tasks[ti].assignee, "task", `Admin has updated the deadline of your task "${ps[pi].tasks[ti].title}" to ${editTaskForm.deadline || "no deadline"}.`);
           setEditingTask(null);
           load();
         }}
@@ -6302,6 +6303,11 @@ const filtered = (filter === "All" ? tasks : tasks.filter((t) => t.status === fi
           ps[pi].tasks[ti].deadline = editMyTaskForm.deadline;
           ps[pi].tasks[ti].updatedAt = new Date().toISOString();
           store.set(KEYS.projects, ps);
+          supabase.from("platform_data").upsert(
+            { key: KEYS.projects, value: ps, updated_at: new Date().toISOString() },
+            { onConflict: "key" }
+          );
+          addNotif(ps[pi].tasks[ti].assignee, "task", `Admin has updated the deadline of your task "${ps[pi].tasks[ti].title}" to ${editMyTaskForm.deadline || "no deadline"}.`);
           setEditingMyTask(null);
           loadTasks();
         }}
