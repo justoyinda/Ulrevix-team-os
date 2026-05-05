@@ -10754,14 +10754,27 @@ const sessionStartHour = userPresence?.sessionStart
     })()
   : null;
 
-const activityHourSet = new Set(
-  userActivity.map((a) => {
-    const d = new Date(a.time);
-    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}`;
-  })
-);
-if (sessionStartHour) activityHourSet.add(sessionStartHour);
-const uniqueHours = activityHourSet.size;
+// Count accumulated minutes from all activity timestamps in 2-minute buckets
+  const activityMinuteSet = new Set(
+    userActivity.map((a) => {
+      const d = new Date(a.time);
+      const bucket = Math.floor(d.getMinutes() / 2);
+      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}-${bucket}`;
+    })
+  );
+  // Also count current session minutes if online
+  if (userPresence?.sessionStart && userPresence?.online) {
+    const sessionStart = new Date(userPresence.sessionStart);
+    const sessionEnd = new Date();
+    let current = new Date(sessionStart);
+    while (current <= sessionEnd) {
+      const bucket = Math.floor(current.getMinutes() / 2);
+      activityMinuteSet.add(`${current.getFullYear()}-${current.getMonth()}-${current.getDate()}-${current.getHours()}-${bucket}`);
+      current = new Date(current.getTime() + 2 * 60 * 1000);
+    }
+  }
+  // Convert 2-minute buckets to hours (each bucket = 2 minutes = 2/60 of an hour)
+  const uniqueHours = Math.round((activityMinuteSet.size * 2) / 60 * 10) / 10;
 
   const presenceInfo = presence[viewEmail];
   const lastSeen = presenceInfo?.lastSeen ? new Date(presenceInfo.lastSeen) : null;
