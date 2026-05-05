@@ -4516,19 +4516,19 @@ if (isPrivateLink && uploaderEmail === ADMIN_EMAIL) {
                 </div>
               )}
             </div>
-            {uploadStatus === "approved" && (
+            {(uploadStatus === "approved" || (isAdmin && uploadStatus === "pending")) && (
               <>
                 {isImage(u.fileType) && !u.isLink && (
                   <img src={u.data} alt={u.fileName} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4, flexShrink: 0, border: `1px solid ${BORDER}` }} />
                 )}
                 {u.isLink ? (
                   <a href={u.data} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
-                    <button style={{ background: TEAL + "22", border: `1px solid ${TEAL}44`, borderRadius: 6, color: TEAL, fontSize: 10, cursor: "pointer", padding: "4px 10px", fontFamily: "'DM Mono',monospace", flexShrink: 0 }}>
+                    <button style={{ background: uploadStatus === "pending" ? GOLD + "22" : TEAL + "22", border: `1px solid ${uploadStatus === "pending" ? GOLD + "44" : TEAL + "44"}`, borderRadius: 6, color: uploadStatus === "pending" ? GOLD : TEAL, fontSize: 10, cursor: "pointer", padding: "4px 10px", fontFamily: "'DM Mono',monospace", flexShrink: 0 }}>
                       ↗ Open Link
                     </button>
                   </a>
                 ) : (
-                  <button onClick={() => downloadFile(u)} style={{ background: TEAL + "22", border: `1px solid ${TEAL}44`, borderRadius: 6, color: TEAL, fontSize: 10, cursor: "pointer", padding: "4px 10px", fontFamily: "'DM Mono',monospace", flexShrink: 0 }}>
+                  <button onClick={() => downloadFile(u)} style={{ background: uploadStatus === "pending" ? GOLD + "22" : TEAL + "22", border: `1px solid ${uploadStatus === "pending" ? GOLD + "44" : TEAL + "44"}`, borderRadius: 6, color: uploadStatus === "pending" ? GOLD : TEAL, fontSize: 10, cursor: "pointer", padding: "4px 10px", fontFamily: "'DM Mono',monospace", flexShrink: 0 }}>
                     ↓ Download
                   </button>
                 )}
