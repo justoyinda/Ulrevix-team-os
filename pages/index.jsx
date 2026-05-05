@@ -10812,6 +10812,21 @@ useEffect(() => {
   store.set(KEYS.performanceGrowthMetrics, allGrowth);
   setSnapshotSaved(true);
 }, [viewEmail, score, uniqueHours, hoursPercent]);
+
+// Real-time refresh every 2 minutes so active session minutes are never missed
+useEffect(() => {
+  const interval = setInterval(() => {
+    // Update presence heartbeat so current session is counted
+    const presence = store.get(KEYS.presence) || {};
+    if (presence[viewEmail]?.online) {
+      presence[viewEmail].lastSeen = new Date().toISOString();
+      store.set(KEYS.presence, presence);
+    }
+    // Force re-render by updating a dummy state trigger
+    setSnapshotSaved(prev => !prev);
+  }, 2 * 60 * 1000);
+  return () => clearInterval(interval);
+}, [viewEmail]);
   const openHoursEdit = () => {
     setHoursForm({ type: userWorkHours.type || "full-time", hoursRequired: userWorkHours.hoursRequired || 40 });
     setHoursSaved(false);
