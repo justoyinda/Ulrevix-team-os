@@ -15719,6 +15719,23 @@ const inactivityRef = useRef(null);
     // Mark offline when tab is closed without signing out
     const handleUnload = () => {
       updatePresence(user.email, false);
+      const presence = store.get(KEYS.presence) || {};
+      const sessionStart = presence[user.email]?.sessionStart;
+      if (sessionStart) {
+        const sessionEnd = new Date().toISOString();
+        const durationMinutes = Math.round((new Date(sessionEnd) - new Date(sessionStart)) / 60000);
+        if (durationMinutes > 0) {
+          const sessions = store.get("ulx_sessions") || [];
+          const existingIdx = sessions.findIndex(s => s.email === user.email && s.sessionStart === sessionStart);
+          if (existingIdx >= 0) {
+            sessions[existingIdx].sessionEnd = sessionEnd;
+            sessions[existingIdx].durationMinutes = durationMinutes;
+          } else {
+            sessions.push({ email: user.email, sessionStart, sessionEnd, durationMinutes });
+          }
+          store.set("ulx_sessions", sessions);
+        }
+      }
     };
     window.addEventListener("beforeunload", handleUnload);
 
