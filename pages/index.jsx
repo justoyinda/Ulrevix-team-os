@@ -2326,19 +2326,33 @@ const MemberSpotlight = ({ currentUser }) => {
         if (s.year === launchYear && s.week < launchWeek) return false;
         return true;
       });
-      store.set(KEYS.weeklySpotlights, cleanedSpots);
+     store.set(KEYS.weeklySpotlights, cleanedSpots);
+      supabase.from("platform_data").upsert(
+        { key: KEYS.weeklySpotlights, value: cleanedSpots, updated_at: new Date().toISOString() },
+        { onConflict: "key" }
+      );
+
       const cleanedWeeklyRanks = (store.get(KEYS.weeklyRankings) || []).filter(r => {
         if (r.year < launchYear) return false;
         if (r.year === launchYear && r.week < launchWeek) return false;
         return true;
       });
       store.set(KEYS.weeklyRankings, cleanedWeeklyRanks);
+      supabase.from("platform_data").upsert(
+        { key: KEYS.weeklyRankings, value: cleanedWeeklyRanks, updated_at: new Date().toISOString() },
+        { onConflict: "key" }
+      );
+
       const cleanedMonthlyRanks = (store.get(KEYS.monthlyRankings) || []).filter(r => {
         if (r.year < launchYear) return false;
         if (r.year === launchYear && r.month < launchMonth) return false;
         return true;
       });
       store.set(KEYS.monthlyRankings, cleanedMonthlyRanks);
+      supabase.from("platform_data").upsert(
+        { key: KEYS.monthlyRankings, value: cleanedMonthlyRanks, updated_at: new Date().toISOString() },
+        { onConflict: "key" }
+      );
     }
 
     const allUsers = store.get(KEYS.users) || {};
