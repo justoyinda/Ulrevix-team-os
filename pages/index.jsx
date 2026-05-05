@@ -2315,6 +2315,32 @@ const MemberSpotlight = ({ currentUser }) => {
   const [expanded, setExpanded] = useState(null);
 
   useEffect(() => {
+    // Clean up any spotlight/ranking data saved before platform launch
+    const launchDate = store.get(KEYS.launchDate);
+    if (launchDate) {
+      const launchWeek = getWeekNum(new Date(launchDate));
+      const launchYear = new Date(launchDate).getFullYear();
+      const launchMonth = new Date(launchDate).getMonth();
+      const cleanedSpots = (store.get(KEYS.weeklySpotlights) || []).filter(s => {
+        if (s.year < launchYear) return false;
+        if (s.year === launchYear && s.week < launchWeek) return false;
+        return true;
+      });
+      store.set(KEYS.weeklySpotlights, cleanedSpots);
+      const cleanedWeeklyRanks = (store.get(KEYS.weeklyRankings) || []).filter(r => {
+        if (r.year < launchYear) return false;
+        if (r.year === launchYear && r.week < launchWeek) return false;
+        return true;
+      });
+      store.set(KEYS.weeklyRankings, cleanedWeeklyRanks);
+      const cleanedMonthlyRanks = (store.get(KEYS.monthlyRankings) || []).filter(r => {
+        if (r.year < launchYear) return false;
+        if (r.year === launchYear && r.month < launchMonth) return false;
+        return true;
+      });
+      store.set(KEYS.monthlyRankings, cleanedMonthlyRanks);
+    }
+
     const allUsers = store.get(KEYS.users) || {};
     const scored = Object.entries(allUsers)
       .filter(([email]) => email !== ADMIN_EMAIL)
