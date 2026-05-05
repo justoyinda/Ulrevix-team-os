@@ -6,6 +6,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
+
 // ─── SUPABASE AUTH HELPERS ────────────────────────────────────────────────────
 const sbAuth = {
 getPassword: async (email) => {
