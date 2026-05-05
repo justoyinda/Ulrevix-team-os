@@ -6,7 +6,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-
 // ─── SUPABASE AUTH HELPERS ────────────────────────────────────────────────────
 const sbAuth = {
 getPassword: async (email) => {
@@ -10811,20 +10810,27 @@ const sessionStartHour = userPresence?.sessionStart
     })()
   : null;
 
-// Session-based hours calculation
-  const allSessions = store.get("ulx_sessions") || [];
-  const userSessions = allSessions.filter(s => {
-    if (s.email !== viewEmail) return false;
-    if (!cutoff) return true;
-    return new Date(s.sessionStart) >= cutoff;
-  });
-  const completedSessionMinutes = userSessions.reduce((sum, s) => sum + (s.durationMinutes || 0), 0);
-  // Also add current active session minutes if user is online right now
-  const currentSessionMinutes = (presenceInfo?.online && presenceInfo?.sessionStart)
-    ? Math.round((new Date() - new Date(presenceInfo.sessionStart)) / 60000)
-    : 0;
-  const totalMinutes = completedSessionMinutes + currentSessionMinutes;
-  const uniqueHours = Math.round((totalMinutes / 60) * 10) / 10;
+// Count accumulated minutes from all activity timestamps in 2-minute buckets
+  const activityMinuteSet = new Set(
+    userActivity.map((a) => {
+      const d = new Date(a.time);
+      const bucket = Math.floor(d.getMinutes() / 2);
+      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}-${bucket}`;
+    })
+  );
+  // Also count current session minutes if online
+  if (userPresence?.sessionStart && userPresence?.online) {
+    const sessionStart = new Date(userPresence.sessionStart);
+    const sessionEnd = new Date();
+    let current = new Date(sessionStart);
+    while (current <= sessionEnd) {
+      const bucket = Math.floor(current.getMinutes() / 2);
+      activityMinuteSet.add(`${current.getFullYear()}-${current.getMonth()}-${current.getDate()}-${current.getHours()}-${bucket}`);
+      current = new Date(current.getTime() + 2 * 60 * 1000);
+    }
+  }
+  // Convert 2-minute buckets to hours (each bucket = 2 minutes = 2/60 of an hour)
+  const uniqueHours = Math.round((activityMinuteSet.size * 2) / 60 * 10) / 10;
 
   const presenceInfo = presence[viewEmail];
   const lastSeen = presenceInfo?.lastSeen ? new Date(presenceInfo.lastSeen) : null;
@@ -10863,9 +10869,16 @@ useEffect(() => {
   setSnapshotSaved(true);
 }, [viewEmail, score, uniqueHours, hoursPercent]);
 
-// Real-time refresh every 2 minutes so current session minutes update on screen
+// Real-time refresh every 2 minutes so active session minutes are never missed
 useEffect(() => {
   const interval = setInterval(() => {
+    // Update presence heartbeat so current session is counted
+    const presence = store.get(KEYS.presence) || {};
+    if (presence[viewEmail]?.online) {
+      presence[viewEmail].lastSeen = new Date().toISOString();
+      store.set(KEYS.presence, presence);
+    }
+    // Force re-render by updating a dummy state trigger
     setSnapshotSaved(prev => !prev);
   }, 2 * 60 * 1000);
   return () => clearInterval(interval);
@@ -15691,31 +15704,10 @@ const inactivityRef = useRef(null);
       1000
     );
 
-    // Heartbeat: update presence every 2 minutes and log session progress
+    // Heartbeat: update presence every 60 seconds while logged in
     const heartbeat = setInterval(() => {
       updatePresence(user.email, true);
-      const presence = store.get(KEYS.presence) || {};
-      const sessionStart = presence[user.email]?.sessionStart;
-      if (sessionStart) {
-        const sessionEnd = new Date().toISOString();
-        const durationMinutes = Math.round((new Date(sessionEnd) - new Date(sessionStart)) / 60000);
-        if (durationMinutes > 0) {
-          const sessions = store.get("ulx_sessions") || [];
-          const existingIdx = sessions.findIndex(s => s.email === user.email && s.sessionStart === sessionStart);
-          if (existingIdx >= 0) {
-            sessions[existingIdx].sessionEnd = sessionEnd;
-            sessions[existingIdx].durationMinutes = durationMinutes;
-          } else {
-            sessions.push({ email: user.email, sessionStart, sessionEnd, durationMinutes });
-          }
-          store.set("ulx_sessions", sessions);
-          supabase.from("platform_data").upsert(
-            { key: "ulx_sessions", value: sessions, updated_at: new Date().toISOString() },
-            { onConflict: "key" }
-          );
-        }
-      }
-    }, 2 * 60 * 1000);
+    }, 60000);
 
     // Mark offline when tab is closed without signing out
     const handleUnload = () => {
@@ -15773,25 +15765,7 @@ const inactivityRef = useRef(null);
   };
     
   const signOut = () => {
-    if (user) {
-      updatePresence(user.email, false);
-      // Save completed session
-      const presence = store.get(KEYS.presence) || {};
-      const sessionStart = presence[user.email]?.sessionStart;
-      if (sessionStart) {
-        const sessionEnd = new Date().toISOString();
-        const durationMinutes = Math.round((new Date(sessionEnd) - new Date(sessionStart)) / 60000);
-        if (durationMinutes > 0) {
-          const sessions = store.get("ulx_sessions") || [];
-          sessions.push({ email: user.email, sessionStart, sessionEnd, durationMinutes });
-          store.set("ulx_sessions", sessions);
-          supabase.from("platform_data").upsert(
-            { key: "ulx_sessions", value: sessions, updated_at: new Date().toISOString() },
-            { onConflict: "key" }
-          );
-        }
-      }
-    }
+    if (user) updatePresence(user.email, false);
     clearTimeout(inactivityRef.current);
     clearInterval(timerRef.current);
     setUser(null);
