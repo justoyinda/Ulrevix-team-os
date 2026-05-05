@@ -2409,10 +2409,24 @@ const MemberSpotlight = ({ currentUser }) => {
   const year = now.getFullYear();
   const month = now.getMonth();
   const allUsers = store.get(KEYS.users) || {};
+  const launchDate = store.get(KEYS.launchDate);
+  const launchWeek = launchDate ? getWeekNum(new Date(launchDate)) : week;
+  const launchYear = launchDate ? new Date(launchDate).getFullYear() : year;
 
   if (period === "weekly") {
-    const savedSpots = (store.get(KEYS.weeklySpotlights) || []).filter(s => !(s.week === week && s.year === year));
-    const savedRanks = (store.get(KEYS.weeklyRankings) || []).filter(r => !(r.week === week && r.year === year));
+    const savedSpots = (store.get(KEYS.weeklySpotlights) || []).filter(s => {
+      // Filter out current week AND any weeks before platform launch
+      if (s.week === week && s.year === year) return false;
+      if (s.year < launchYear) return false;
+      if (s.year === launchYear && s.week < launchWeek) return false;
+      return true;
+    });
+    const savedRanks = (store.get(KEYS.weeklyRankings) || []).filter(r => {
+      if (r.week === week && r.year === year) return false;
+      if (r.year < launchYear) return false;
+      if (r.year === launchYear && r.week < launchWeek) return false;
+      return true;
+    });
     if (savedSpots.length === 0 && savedRanks.length === 0) return null;
     return (
       <div style={{ marginTop: 32 }}>
