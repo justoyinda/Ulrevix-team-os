@@ -1521,18 +1521,19 @@ const Auth = ({ onLogin }) => {
         return;
       }
 
-      // ── STEP 2: Check if blocked ──
-      let blockedList = [];
-      try {
-        const { data: pdBlocked } = await supabase
-          .from("platform_data")
-          .select("value")
-          .eq("key", "ulx_blocked_emails")
-          .maybeSingle();
-        blockedList = Array.isArray(pdBlocked?.value) ? pdBlocked.value : (store.get(KEYS.blockedEmails) || []);
-      } catch (e) {
-        blockedList = store.get(KEYS.blockedEmails) || [];
-      }
+     const withTimeout = (promise, ms = 5000, fallback) =>
+  Promise.race([promise, new Promise(res => setTimeout(() => res({ data: null }), ms))]).then(r => r ?? { data: null }).catch(() => ({ data: null }));
+
+// ── STEP 2: Check if blocked ──
+let blockedList = [];
+try {
+  const { data: pdBlocked } = await withTimeout(
+    supabase.from("platform_data").select("value").eq("key", "ulx_blocked_emails").maybeSingle()
+  );
+  blockedList = Array.isArray(pdBlocked?.value) ? pdBlocked.value : (store.get(KEYS.blockedEmails) || []);
+} catch (e) {
+  blockedList = store.get(KEYS.blockedEmails) || [];
+}
       if (blockedList.includes(em)) {
         setErr("This email has been blocked. Contact your admin.");
         setLoading(false);
@@ -1541,12 +1542,10 @@ const Auth = ({ onLogin }) => {
 
       // ── STEP 3: Build list of authorized emails from email history ──
       let emailHistoryList = [];
-      try {
-        const { data: pdHistory } = await supabase
-          .from("platform_data")
-          .select("value")
-          .eq("key", "ulx_email_history")
-          .maybeSingle();
+try {
+  const { data: pdHistory } = await withTimeout(
+    supabase.from("platform_data").select("value").eq("key", "ulx_email_history").maybeSingle()
+  );
         emailHistoryList = Array.isArray(pdHistory?.value) ? pdHistory.value : (store.get(KEYS.emailHistory) || []);
       } catch (e) {
         emailHistoryList = store.get(KEYS.emailHistory) || [];
@@ -1571,12 +1570,10 @@ const Auth = ({ onLogin }) => {
 
       // Also get pending emails as backup
       let pendingList = [];
-      try {
-        const { data: pdPending } = await supabase
-          .from("platform_data")
-          .select("value")
-          .eq("key", "ulx_pending_emails")
-          .maybeSingle();
+try {
+  const { data: pdPending } = await withTimeout(
+    supabase.from("platform_data").select("value").eq("key", "ulx_pending_emails").maybeSingle()
+  );
         pendingList = Array.isArray(pdPending?.value) ? pdPending.value : (store.get(KEYS.pendingEmails) || []);
       } catch (e) {
         pendingList = store.get(KEYS.pendingEmails) || [];
