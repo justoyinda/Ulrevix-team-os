@@ -1582,12 +1582,20 @@ const Auth = ({ onLogin }) => {
         pendingList = store.get(KEYS.pendingEmails) || [];
       }
 
-      // Final allowed list combining all sources
-      const allAllowedEmails = [...new Set([
-        ...INITIAL_MEMBER_EMAILS,
-        ...pendingList,
-        ...authorizedEmails,
-      ])].filter(e => !blockedList.includes(e));
+     // Also pull registered users directly from Supabase users table as fallback
+let registeredFromTable = [];
+try {
+  const { data: usersRows } = await supabase.from("users").select("email");
+  registeredFromTable = usersRows ? usersRows.map(r => r.email) : [];
+} catch (e) {}
+
+// Final allowed list combining all sources
+const allAllowedEmails = [...new Set([
+  ...INITIAL_MEMBER_EMAILS,
+  ...pendingList,
+  ...authorizedEmails,
+  ...registeredFromTable,
+])].filter(e => !blockedList.includes(e));
 
       // ── STEP 4: Role check ──
       if (role === "member" && allAdminEmails.includes(em)) {
