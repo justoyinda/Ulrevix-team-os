@@ -4755,6 +4755,8 @@ if (isPrivateLink && uploaderEmail === ADMIN_EMAIL) {
 const Projects = ({ user }) => {
   const [showAddPrivateTask, setShowAddPrivateTask] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  const [editingProject, setEditingProject] = useState(false);
+const [editProjectForm, setEditProjectForm] = useState({});
   const [editingPrivateProject, setEditingPrivateProject] = useState(false);
   const [privateTaskUserFilter, setPrivateTaskUserFilter] = useState("all");
 const [privateProjectForm, setPrivateProjectForm] = useState({ name: "", description: "" });
@@ -4935,13 +4937,32 @@ addNotif(ADMIN_EMAIL, "task", `${user.email} marked a task as ${newStatus}`);
             ← Projects
           </button>
           {user.role === "admin" && (
-            <Btn
-              variant="danger"
-              onClick={() => setShowDeleteConfirm(p)}
-              style={{ marginLeft: "auto", padding: "6px 14px", fontSize: 11 }}
-            >
-              Delete Project
-            </Btn>
+            <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+              <Btn
+                variant="secondary"
+                onClick={() => {
+                  setEditProjectForm({
+                    name: p.name,
+                    description: p.description || "",
+                    team: p.team || "",
+                    deadline: p.deadline || "",
+                    color: p.color || GOLD,
+                    members: [...(p.members || [])],
+                  });
+                  setEditingProject(true);
+                }}
+                style={{ padding: "6px 14px", fontSize: 11 }}
+              >
+                Edit Project
+              </Btn>
+              <Btn
+                variant="danger"
+                onClick={() => setShowDeleteConfirm(p)}
+                style={{ padding: "6px 14px", fontSize: 11 }}
+              >
+                Delete Project
+              </Btn>
+            </div>
           )}
         </div>
 
@@ -5451,6 +5472,106 @@ addNotif(ADMIN_EMAIL, "task", `${user.email} marked a task as ${newStatus}`);
         </div>
 
         <ProjectFlowPanel p={p} user={user} allUsers={allUsers} load={load} />
+
+        {editingProject && user.role === "admin" && (
+          <Modal title="Edit Project" onClose={() => setEditingProject(false)} width={520}>
+            <Inp
+              label="Project Name"
+              value={editProjectForm.name}
+              onChange={(v) => setEditProjectForm((f) => ({ ...f, name: v }))}
+              placeholder="Project name..."
+            />
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 7, fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em" }}>DESCRIPTION</div>
+              <textarea
+                value={editProjectForm.description}
+                onChange={(e) => setEditProjectForm((f) => ({ ...f, description: e.target.value }))}
+                rows={3}
+                placeholder="Project description..."
+                style={{ width: "100%", padding: "11px 14px", background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}`, borderRadius: 8, color: "#fff", fontSize: 14, resize: "vertical" }}
+              />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
+              <Inp
+                label="Team / Department"
+                value={editProjectForm.team}
+                onChange={(v) => setEditProjectForm((f) => ({ ...f, team: v }))}
+                placeholder="Engineering"
+              />
+              <Inp
+                label="Deadline"
+                value={editProjectForm.deadline}
+                onChange={(v) => setEditProjectForm((f) => ({ ...f, deadline: v }))}
+                type="date"
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 10, fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em" }}>PROJECT COLOR</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {COLORS.map((c) => (
+                  <div
+                    key={c}
+                    onClick={() => setEditProjectForm((f) => ({ ...f, color: c }))}
+                    style={{ width: 24, height: 24, borderRadius: "50%", background: c, cursor: "pointer", border: editProjectForm.color === c ? "3px solid #fff" : "3px solid transparent", transition: "border 0.15s" }}
+                  />
+                ))}
+              </div>
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 10, fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em" }}>COLLABORATORS</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 160, overflowY: "auto" }}>
+                {Object.entries(allUsers).map(([em, u]) => {
+                  const isIn = editProjectForm.members.includes(em);
+                  return (
+                    <div
+                      key={em}
+                      onClick={() => setEditProjectForm((f) => ({
+                        ...f,
+                        members: isIn ? f.members.filter((x) => x !== em) : [...f.members, em],
+                      }))}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 8, background: isIn ? GOLD + "18" : "rgba(255,255,255,0.03)", border: `1px solid ${isIn ? GOLD + "44" : BORDER}`, cursor: "pointer" }}
+                    >
+                      <Avatar name={u.name || em} color={u.color || GOLD} size={28} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, color: "#fff" }}>{u.name || em}</div>
+                        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>{em}</div>
+                      </div>
+                      {isIn && <span style={{ color: GOLD, fontSize: 14 }}>✓</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn
+                onClick={() => {
+                  if (!editProjectForm.name.trim()) return;
+                  const ps = store.get(KEYS.projects) || [];
+                  const pi = ps.findIndex((x) => x.id === p.id);
+                  if (pi < 0) return;
+                  ps[pi].name = editProjectForm.name.trim();
+                  ps[pi].description = editProjectForm.description;
+                  ps[pi].team = editProjectForm.team;
+                  ps[pi].deadline = editProjectForm.deadline;
+                  ps[pi].color = editProjectForm.color;
+                  ps[pi].members = editProjectForm.members;
+                  saveProjects(ps);
+                  addActivity(user.email, "edited project details for", editProjectForm.name.trim(), p.id);
+                  const removedMembers = (p.members || []).filter((m) => !editProjectForm.members.includes(m));
+                  const addedMembers = editProjectForm.members.filter((m) => !(p.members || []).includes(m));
+                  addedMembers.forEach((em) => addNotif(em, "task", `You've been added to project: ${editProjectForm.name.trim()}`));
+                  removedMembers.forEach((em) => addNotif(em, "task", `You've been removed from project: ${editProjectForm.name.trim()}`));
+                  setEditingProject(false);
+                  load();
+                }}
+                style={{ flex: 1 }}
+              >
+                Save Changes
+              </Btn>
+              <Btn variant="secondary" onClick={() => setEditingProject(false)}>Cancel</Btn>
+            </div>
+          </Modal>
+        )}
 
         {showAddTask && (
           <Modal
