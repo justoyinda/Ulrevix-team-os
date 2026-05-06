@@ -15867,14 +15867,14 @@ setTimeout(async () => {
       .like("key", "ulx_task_uploads_%");
     if (uploadData) {
       uploadData.forEach(({ key, value }) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.warn("Upload too large for localStorage, skipping:", key);
-  }
-});
+        try {
+          localStorage.setItem(key, JSON.stringify(value));
+        } catch (e) {
+          console.warn("Upload too large for localStorage, skipping:", key);
+        }
+      });
     }
-const { data: reviewData } = await supabase
+    const { data: reviewData } = await supabase
       .from("platform_data")
       .select("key, value")
       .like("key", "ulx_task_upload_reviews_%");
@@ -15886,7 +15886,6 @@ const { data: reviewData } = await supabase
           console.warn("Review data too large for localStorage, skipping:", key);
         }
       });
-    }
     }
   } catch (e) {
     console.error("Background sync error:", e);
