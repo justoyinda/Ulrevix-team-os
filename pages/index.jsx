@@ -6,7 +6,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-
 // ─── SUPABASE AUTH HELPERS ────────────────────────────────────────────────────
 const sbAuth = {
 getPassword: async (email) => {
@@ -1501,127 +1500,163 @@ const Auth = ({ onLogin }) => {
   }, [mode, resetId]);
 
   const handleLoginOrRegister = async () => {
-  setErr(""); setInfo(""); setLoading(true);
-  const em = email.trim().toLowerCase();
+    setErr(""); setInfo(""); setLoading(true);
+    const em = email.trim().toLowerCase();
+    try {
 
-  try {
-    // ── ADMIN SHORTCUT ──
-    if (em === ADMIN_EMAIL && role === "admin") {
-      const existingPw = store.get(KEYS.passwords)?.[em] || await sbAuth.getPassword(em).catch(() => null);
+      // ── STEP 1: Primary admin always gets through ──
+      if (em === ADMIN_EMAIL && role === "admin") {
+        const existingPw = await sbAuth.getPassword(em);
+        if (!existingPw) { setMode("register"); setLoading(false); return; }
+        if (hashPw(pw) !== existingPw) { setErr("Incorrect password."); setLoading(false); return; }
+        let userRecord = await sbAuth.getUser(em);
+        if (!userRecord) {
+          userRecord = { email: em, name: "Admin", role: "admin", color: GOLD };
+          await sbAuth.setUser(em, userRecord);
+        }
+        userRecord.email = em;
+        onLogin(userRecord);
+        setLoading(false);
+        return;
+      }
+
+      // ── STEP 2: Check if blocked ──
+      let blockedList = [];
+      try {
+        const { data: pdBlocked } = await supabase
+          .from("platform_data")
+          .select("value")
+          .eq("key", "ulx_blocked_emails")
+          .maybeSingle();
+        blockedList = Array.isArray(pdBlocked?.value) ? pdBlocked.value : (store.get(KEYS.blockedEmails) || []);
+      } catch (e) {
+        blockedList = store.get(KEYS.blockedEmails) || [];
+      }
+      if (blockedList.includes(em)) {
+        setErr("This email has been blocked. Contact your admin.");
+        setLoading(false);
+        return;
+      }
+
+      // ── STEP 3: Build list of authorized emails from email history ──
+      let emailHistoryList = [];
+      try {
+        const { data: pdHistory } = await supabase
+          .from("platform_data")
+          .select("value")
+          .eq("key", "ulx_email_history")
+          .maybeSingle();
+        emailHistoryList = Array.isArray(pdHistory?.value) ? pdHistory.value : (store.get(KEYS.emailHistory) || []);
+      } catch (e) {
+        emailHistoryList = store.get(KEYS.emailHistory) || [];
+      }
+
+      // Get most recent action per email
+      const emailStatusMap = {};
+      emailHistoryList.forEach(h => {
+        if (!emailStatusMap[h.email]) emailStatusMap[h.email] = h;
+      });
+
+      // All emails whose most recent action is "authorized"
+      const authorizedEmails = Object.entries(emailStatusMap)
+        .filter(([e, h]) => h.action === "authorized")
+        .map(([e]) => e);
+
+      // Admin emails from history
+      const adminEmails = Object.entries(emailStatusMap)
+        .filter(([e, h]) => h.action === "authorized" && h.role === "admin")
+        .map(([e]) => e);
+      const allAdminEmails = [...new Set([ADMIN_EMAIL, ...adminEmails])];
+
+      // Also get pending emails as backup
+      let pendingList = [];
+      try {
+        const { data: pdPending } = await supabase
+          .from("platform_data")
+          .select("value")
+          .eq("key", "ulx_pending_emails")
+          .maybeSingle();
+        pendingList = Array.isArray(pdPending?.value) ? pdPending.value : (store.get(KEYS.pendingEmails) || []);
+      } catch (e) {
+        pendingList = store.get(KEYS.pendingEmails) || [];
+      }
+
+      // Final allowed list combining all sources
+      const allAllowedEmails = [...new Set([
+        ...INITIAL_MEMBER_EMAILS,
+        ...pendingList,
+        ...authorizedEmails,
+      ])].filter(e => !blockedList.includes(e));
+
+      // ── STEP 4: Role check ──
+      if (role === "member" && allAdminEmails.includes(em)) {
+        setErr("This email is not authorized for this role.");
+        setLoading(false);
+        return;
+      }
+      if (role === "admin" && !allAdminEmails.includes(em)) {
+        setErr("This email is not authorized for this role.");
+        setLoading(false);
+        return;
+      }
+      if (!allAllowedEmails.includes(em)) {
+        setErr("This email is not authorized for this role.");
+        setLoading(false);
+        return;
+      }
+
+      // ── STEP 5: Check for pending password reset ──
+      const { data: pendingResets } = await supabase
+        .from("pw_resets")
+        .select("*")
+        .eq("email", em)
+        .eq("status", "pending");
+      if (pendingResets && pendingResets.length > 0) {
+        setResetId(pendingResets[0].id);
+        setMode("resetWaiting");
+        setLoading(false);
+        return;
+      }
+
+      const { data: approvedResets } = await supabase
+        .from("pw_resets")
+        .select("*")
+        .eq("email", em)
+        .eq("status", "approved");
+      if (approvedResets && approvedResets.length > 0) {
+        setResetId(approvedResets[0].id);
+        setMode("resetNew");
+        setLoading(false);
+        return;
+      }
+
+      // ── STEP 6: Password check ──
+      const existingPw = await sbAuth.getPassword(em);
       if (!existingPw) { setMode("register"); setLoading(false); return; }
       if (hashPw(pw) !== existingPw) { setErr("Incorrect password."); setLoading(false); return; }
-      let userRecord = store.get(KEYS.users)?.[em] || await sbAuth.getUser(em).catch(() => null);
-      if (!userRecord) userRecord = { email: em, name: "Admin", role: "admin", color: GOLD };
+
+      // ── STEP 7: Load or create user record ──
+      let userRecord = await sbAuth.getUser(em);
+      if (!userRecord) {
+        const allUsers = await sbAuth.getAllUsers();
+        const colorIndex = Object.keys(allUsers).length % COLORS.length;
+        userRecord = {
+          email: em,
+          name: em.split("@")[0],
+          role: allAdminEmails.includes(em) ? "admin" : "member",
+          color: COLORS[colorIndex],
+        };
+        await sbAuth.setUser(em, userRecord);
+      }
       userRecord.email = em;
       onLogin(userRecord);
-      setLoading(false);
-      return;
-    }
 
-    // ── BUILD ALLOWED LIST FROM LOCALSTORAGE FIRST ──
-    const blockedList = store.get(KEYS.blockedEmails) || [];
-    if (blockedList.includes(em)) {
-      setErr("This email has been blocked. Contact your admin.");
-      setLoading(false);
-      return;
-    }
-
-    const emailHistory = store.get(KEYS.emailHistory) || [];
-    const pendingList = store.get(KEYS.pendingEmails) || [];
-    const allUsers = store.get(KEYS.users) || {};
-
-    const emailStatusMap = {};
-    emailHistory.forEach(h => {
-      if (!emailStatusMap[h.email]) emailStatusMap[h.email] = h;
-    });
-
-    const authorizedEmails = Object.entries(emailStatusMap)
-      .filter(([, h]) => h.action === "authorized")
-      .map(([e]) => e);
-
-    const adminEmails = Object.entries(emailStatusMap)
-      .filter(([, h]) => h.action === "authorized" && h.role === "admin")
-      .map(([e]) => e);
-    const allAdminEmails = [...new Set([ADMIN_EMAIL, ...adminEmails])];
-
-    // Anyone already in users store is allowed
-    const registeredEmails = Object.keys(allUsers);
-
-    const allAllowedEmails = [...new Set([
-      ...INITIAL_MEMBER_EMAILS,
-      ...pendingList,
-      ...authorizedEmails,
-      ...registeredEmails,
-    ])].filter(e => !blockedList.includes(e));
-
-    // ── ROLE CHECK ──
-    if (role === "member" && allAdminEmails.includes(em)) {
-      setErr("This email is not authorized for this role.");
-      setLoading(false);
-      return;
-    }
-    if (role === "admin" && !allAdminEmails.includes(em)) {
-      setErr("This email is not authorized for this role.");
-      setLoading(false);
-      return;
-    }
-    if (!allAllowedEmails.includes(em)) {
-      setErr("This email is not authorized for this role.");
-      setLoading(false);
-      return;
-    }
-
-    // ── PASSWORD CHECK — Supabase first, localStorage fallback ──
-    const passwords = store.get(KEYS.passwords) || {};
-    let existingPw = passwords[em] || null;
-
-    try {
-      const sbPw = await Promise.race([
-        sbAuth.getPassword(em),
-        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 5000))
-      ]);
-      if (sbPw) {
-        existingPw = sbPw;
-        passwords[em] = sbPw;
-        store.set(KEYS.passwords, passwords);
-      }
     } catch (e) {
-      // Supabase timed out — fall through to localStorage cache
+      console.error("Login error:", e);
+      setErr("Something went wrong. Please try again.");
     }
-
-    if (!existingPw) { setMode("register"); setLoading(false); return; }
-    if (hashPw(pw) !== existingPw) { setErr("Incorrect password."); setLoading(false); return; }
-
-    // ── LOAD USER RECORD ──
-    let userRecord = allUsers[em];
-    if (!userRecord) {
-      try {
-        userRecord = await Promise.race([
-          sbAuth.getUser(em),
-          new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 4000))
-        ]);
-      } catch (e) {
-        userRecord = null;
-      }
-    }
-    if (!userRecord) {
-      const colorIndex = Object.keys(allUsers).length % COLORS.length;
-      userRecord = {
-        email: em,
-        name: em.split("@")[0],
-        role: allAdminEmails.includes(em) ? "admin" : "member",
-        color: COLORS[colorIndex],
-      };
-    }
-    userRecord.email = em;
-    onLogin(userRecord);
-
-  } catch (e) {
-    console.error("Login error:", e);
-    setErr("Something went wrong. Please try again.");
-  }
-  setLoading(false);
-};
+    setLoading(false);
+  };
 
   const handleRegister = async () => {
     setErr(""); setLoading(true);
