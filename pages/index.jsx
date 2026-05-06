@@ -1571,25 +1571,22 @@ const Auth = ({ onLogin }) => {
       return;
     }
 
-    // ── PASSWORD CHECK FROM LOCALSTORAGE ──
+    // ── PASSWORD CHECK — Supabase first, localStorage fallback ──
     const passwords = store.get(KEYS.passwords) || {};
-    let existingPw = passwords[em];
+    let existingPw = passwords[em] || null;
 
-    // If not in localStorage, try Supabase with a timeout
-    if (!existingPw) {
-      try {
-        const result = await Promise.race([
-          sbAuth.getPassword(em),
-          new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 4000))
-        ]);
-        existingPw = result;
-        if (existingPw) {
-          passwords[em] = existingPw;
-          localStorage.setItem(KEYS.passwords, JSON.stringify(passwords));
-        }
-      } catch (e) {
-        existingPw = null;
+    try {
+      const sbPw = await Promise.race([
+        sbAuth.getPassword(em),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 5000))
+      ]);
+      if (sbPw) {
+        existingPw = sbPw;
+        passwords[em] = sbPw;
+        store.set(KEYS.passwords, passwords);
       }
+    } catch (e) {
+      // Supabase timed out — fall through to localStorage cache
     }
 
     if (!existingPw) { setMode("register"); setLoading(false); return; }
