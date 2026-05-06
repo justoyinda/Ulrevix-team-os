@@ -562,20 +562,17 @@ function calculateMemberScore(email, period = "weekly") {
   const completedPeriod = periodTasks.filter((t) => t.status === "Completed").length;
   const inProgressPeriod = periodTasks.filter((t) => t.status === "In Progress").length;
 
-  // Completion rate score (0-30)
-  const completionRate = myTasks.length ? (completedTotal / myTasks.length) : 0;
-  const completionScore = Math.round(completionRate * 30);
-
-  // Period activity score (0-25)
+ // Tasks completed this period (0-40) — highest priority
   const periodActivity = activity.filter(
     (a) => a.userId === email && new Date(a.time) >= cutoff
   ).length;
-  const activityScore = Math.min(25, Math.round(periodActivity * 2.5));
+  const periodTaskScore = Math.min(40, completedPeriod * 8);
 
-  // Tasks completed this period (0-20)
-  const periodTaskScore = Math.min(20, completedPeriod * 4);
+  // Completion rate score (0-30) — second priority
+  const completionRate = myTasks.length ? (completedTotal / myTasks.length) : 0;
+  const completionScore = Math.round(completionRate * 30);
 
-  // Report submission score (0-15)
+  // Report submission score (0-20) — third priority
   const now2 = new Date();
   const week = getWeekNum(now2);
   const month = now2.getMonth();
@@ -587,25 +584,26 @@ function calculateMemberScore(email, period = "weekly") {
     (r) => r.email === email && r.month === month && r.year === year
   );
   const reportScore = period === "weekly"
-    ? (hasWeeklyReport ? 15 : 0)
-    : (hasMonthlyReport ? 15 : 0);
+    ? (hasWeeklyReport ? 20 : 0)
+    : (hasMonthlyReport ? 20 : 0);
 
-  // Messaging/collaboration score (0-10)
+  // Activity/collaboration score (0-10) — lowest priority
   const periodMessages = messages.filter(
     (m) => m.from === email && new Date(m.sentAt) >= cutoff
   ).length;
-  const msgScore = Math.min(10, Math.round(periodMessages * 1));
+  const msgScore = Math.min(5, Math.round(periodMessages * 1));
+  const activityScore = Math.min(5, Math.round(periodActivity * 0.5));
 
-  const total = completionScore + activityScore + periodTaskScore + reportScore + msgScore;
+  const total = periodTaskScore + completionScore + reportScore + msgScore + activityScore;
 
   return {
     total,
     breakdown: {
-      completion: completionScore,
-      activity: activityScore,
       tasks: periodTaskScore,
+      completion: completionScore,
       reports: reportScore,
       collaboration: msgScore,
+      activity: activityScore,
     },
     stats: {
       completedTotal,
