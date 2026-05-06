@@ -2353,11 +2353,6 @@ const MemberSpotlight = ({ currentUser }) => {
   const [expanded, setExpanded] = useState(null);
 
   useEffect(() => {
-    const now = new Date();
-    const week = getWeekNum(now);
-    const year = now.getFullYear();
-    const month = now.getMonth();
-
     // Clean up any spotlight/ranking data saved before platform launch
     const launchDate = store.get(KEYS.launchDate);
     if (launchDate) {
@@ -2367,10 +2362,9 @@ const MemberSpotlight = ({ currentUser }) => {
       const cleanedSpots = (store.get(KEYS.weeklySpotlights) || []).filter(s => {
         if (s.year < launchYear) return false;
         if (s.year === launchYear && s.week < launchWeek) return false;
-        if (s.week === week && s.year === year) return false;
         return true;
       });
-      store.set(KEYS.weeklySpotlights, cleanedSpots);
+     store.set(KEYS.weeklySpotlights, cleanedSpots);
       supabase.from("platform_data").upsert(
         { key: KEYS.weeklySpotlights, value: cleanedSpots, updated_at: new Date().toISOString() },
         { onConflict: "key" }
@@ -2379,7 +2373,6 @@ const MemberSpotlight = ({ currentUser }) => {
       const cleanedWeeklyRanks = (store.get(KEYS.weeklyRankings) || []).filter(r => {
         if (r.year < launchYear) return false;
         if (r.year === launchYear && r.week < launchWeek) return false;
-        if (r.week === week && r.year === year) return false;
         return true;
       });
       store.set(KEYS.weeklyRankings, cleanedWeeklyRanks);
