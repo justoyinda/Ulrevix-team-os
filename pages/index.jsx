@@ -2359,11 +2359,13 @@ const MemberSpotlight = ({ currentUser }) => {
       const launchWeek = getWeekNum(new Date(launchDate));
       const launchYear = new Date(launchDate).getFullYear();
       const launchMonth = new Date(launchDate).getMonth();
-      const cleanedSpots = (store.get(KEYS.weeklySpotlights) || []).filter(s => {
-        if (s.year < launchYear) return false;
-        if (s.year === launchYear && s.week < launchWeek) return false;
-        return true;
-      });
+const cleanedSpots = (store.get(KEYS.weeklySpotlights) || []).filter(s => {
+      if (s.year < launchYear) return false;
+      if (s.year === launchYear && s.week < launchWeek) return false;
+      // Remove current week from past spotlights — it belongs in the live rankings
+      if (s.week === week && s.year === year) return false;
+      return true;
+    });
      store.set(KEYS.weeklySpotlights, cleanedSpots);
       supabase.from("platform_data").upsert(
         { key: KEYS.weeklySpotlights, value: cleanedSpots, updated_at: new Date().toISOString() },
@@ -2373,6 +2375,8 @@ const MemberSpotlight = ({ currentUser }) => {
       const cleanedWeeklyRanks = (store.get(KEYS.weeklyRankings) || []).filter(r => {
         if (r.year < launchYear) return false;
         if (r.year === launchYear && r.week < launchWeek) return false;
+        // Remove current week from past rankings
+        if (r.week === week && r.year === year) return false;
         return true;
       });
       store.set(KEYS.weeklyRankings, cleanedWeeklyRanks);
