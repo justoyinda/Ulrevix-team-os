@@ -15812,12 +15812,18 @@ if (cfg?.launched) {
 }
 
 // Pull ALL shared platform data from Supabase into localStorage
+// Skip task uploads/reviews — they load lazily and are too large for localStorage quota
 const { data: platformData } = await supabase
   .from("platform_data")
   .select("key, value");
 if (platformData && platformData.length > 0) {
   platformData.forEach(({ key, value }) => {
-    localStorage.setItem(key, JSON.stringify(value));
+    if (key.startsWith("ulx_task_uploads_") || key.startsWith("ulx_task_upload_reviews_")) return;
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      console.warn("localStorage quota exceeded for key:", key);
+    }
   });
 }
 
@@ -15843,7 +15849,11 @@ const { data: essentialData } = await supabase
 
 if (essentialData) {
   essentialData.forEach(({ key, value }) => {
-    localStorage.setItem(key, JSON.stringify(value));
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      console.warn("localStorage quota exceeded for key:", key);
+    }
   });
 }
 
@@ -15857,17 +15867,26 @@ setTimeout(async () => {
       .like("key", "ulx_task_uploads_%");
     if (uploadData) {
       uploadData.forEach(({ key, value }) => {
-        localStorage.setItem(key, JSON.stringify(value));
-      });
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.warn("Upload too large for localStorage, skipping:", key);
+  }
+});
     }
-    const { data: reviewData } = await supabase
+const { data: reviewData } = await supabase
       .from("platform_data")
       .select("key, value")
       .like("key", "ulx_task_upload_reviews_%");
     if (reviewData) {
       reviewData.forEach(({ key, value }) => {
-        localStorage.setItem(key, JSON.stringify(value));
+        try {
+          localStorage.setItem(key, JSON.stringify(value));
+        } catch (e) {
+          console.warn("Review data too large for localStorage, skipping:", key);
+        }
       });
+    }
     }
   } catch (e) {
     console.error("Background sync error:", e);
