@@ -256,12 +256,52 @@ function addActivity(userId, action, target, projectId = null) {
 function updatePresence(email, online, forceNewSession = false) {
   const presence = store.get(KEYS.presence) || {};
   const existing = presence[email] || {};
-  presence[email] = {
-    lastSeen: new Date().toISOString(),
-    online,
-    sessionStart: online ? (forceNewSession ? new Date().toISOString() : (existing.sessionStart || new Date().toISOString())) : null,
-    offlineSince: !online ? new Date().toISOString() : null,
-  };
+  const now = new Date();
+  const nowIso = now.toISOString();
+
+  // Compute current week key (year + ISO week number)
+  const weekKey = `${now.getFullYear()}-W${String(getWeekNum(now)).padStart(2, "0")}`;
+
+  // If going offline and there's an active session, accumulate the session duration
+  if (!online && existing.online && existing.sessionStart) {
+    const sessionMs = now.getTime() - new Date(existing.sessionStart).getTime();
+    if (sessionMs > 0) {
+      // Only accumulate if same week as session start
+      const sessionStartDate = new Date(existing.sessionStart);
+      const sessionWeekKey = `${sessionStartDate.getFullYear()}-W${String(getWeekNum(sessionStartDate)).padStart(2, "0")}`;
+      const accumulatedKey = sessionWeekKey; // accumulate into the week the session started
+      const existingAccumulated = existing.weeklyAccumulated || {};
+      existingAccumulated[accumulatedKey] = (existingAccumulated[accumulatedKey] || 0) + sessionMs;
+      presence[email] = {
+        ...existing,
+        lastSeen: nowIso,
+        online: false,
+        sessionStart: null,
+        offlineSince: nowIso,
+        weeklyAccumulated: existingAccumulated,
+      };
+      store.set(KEYS.presence, presence);
+      return;
+    }
+  }
+
+  if (online) {
+    presence[email] = {
+      ...existing,
+      lastSeen: nowIso,
+      online: true,
+      sessionStart: forceNewSession ? nowIso : (existing.sessionStart || nowIso),
+      offlineSince: null,
+    };
+  } else {
+    presence[email] = {
+      ...existing,
+      lastSeen: nowIso,
+      online: false,
+      sessionStart: null,
+      offlineSince: nowIso,
+    };
+  }
   store.set(KEYS.presence, presence);
 }
 
@@ -10756,6 +10796,82 @@ const IssueCard = ({ issue, isAdmin, user, editingId, setEditingId, editStatus, 
   );
 };
 
+// ─── HOURS MIGRATION (ONE-TIME) ──────────────────────────────────────────────
+function migrateHoursFromActivity(email) {
+  const MIGRATION_FLAG_KEY = `ulx_hours_migrated_v1_${email}`;
+  if (localStorage.getItem(MIGRATION_FLAG_KEY)) return; // already ran
+
+  const presence = store.get(KEYS.presence) || {};
+  const userPresence = presence[email] || {};
+  const now = new Date();
+
+  // If weeklyAccumulated already has real data, don't overwrite
+  const existingAcc = userPresence.weeklyAccumulated || {};
+  if (Object.keys(existingAcc).length > 0) {
+    localStorage.setItem(MIGRATION_FLAG_KEY, "1");
+    return;
+  }
+
+  // Read all activity entries for this user
+  const activity = store.get(KEYS.activity) || [];
+  const myActivity = activity.filter(a => a.userId === email);
+
+  if (myActivity.length === 0) {
+    localStorage.setItem(MIGRATION_FLAG_KEY, "1");
+    return;
+  }
+
+  // Group activity timestamps into 2-minute buckets per week
+  // Each bucket = 2 minutes of estimated active time
+  const weekBuckets = {}; // { weekKey: Set of bucket strings }
+
+  myActivity.forEach(a => {
+    const d = new Date(a.time);
+    const weekKey = `${d.getFullYear()}-W${String(getWeekNum(d)).padStart(2, "0")}`;
+    if (!weekBuckets[weekKey]) weekBuckets[weekKey] = new Set();
+    const bucket = Math.floor(d.getMinutes() / 2);
+    weekBuckets[weekKey].add(
+      `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}-${bucket}`
+    );
+  });
+
+  // Convert bucket counts to milliseconds (each bucket = 2 minutes)
+  const weeklyAccumulated = {};
+  Object.entries(weekBuckets).forEach(([weekKey, bucketSet]) => {
+    weeklyAccumulated[weekKey] = bucketSet.size * 2 * 60 * 1000; // ms
+  });
+
+  // Also factor in sessionStart if present and valid
+  // (the most recent session that may not yet be in activity log)
+  if (userPresence.sessionStart) {
+    const sessionStart = new Date(userPresence.sessionStart);
+    const sessionEnd = userPresence.lastSeen
+      ? new Date(userPresence.lastSeen)
+      : now;
+    const sessionMs = Math.max(0, sessionEnd.getTime() - sessionStart.getTime());
+    if (sessionMs > 0 && sessionMs < 24 * 60 * 60 * 1000) { // sanity cap: max 24h
+      const weekKey = `${sessionStart.getFullYear()}-W${String(getWeekNum(sessionStart)).padStart(2, "0")}`;
+      weeklyAccumulated[weekKey] = (weeklyAccumulated[weekKey] || 0) + sessionMs;
+    }
+  }
+
+  // Write migrated data back into presence
+  presence[email] = {
+    ...userPresence,
+    weeklyAccumulated,
+  };
+  store.set(KEYS.presence, presence);
+
+  // Mark migration as done so it never runs again for this user
+  localStorage.setItem(MIGRATION_FLAG_KEY, "1");
+
+  console.log(`[Ulrevix] Hours migration complete for ${email}:`,
+    Object.entries(weeklyAccumulated).map(([k, v]) =>
+      `${k}: ${Math.round(v / 3600000 * 10) / 10}h`
+    ).join(", ")
+  );
+}
+
 // ─── PERFORMANCE ──────────────────────────────────────────────────────────────
 const Performance = ({ user }) => {
   const [period, setPeriod] = useState("month");
@@ -10789,48 +10905,73 @@ const [snapshotSaved, setSnapshotSaved] = useState(false);
 
   const userWorkHours = workHoursData[viewEmail] || { type: "full-time", hoursRequired: 40 };
 
-  // Estimate active hours from activity log
   const now = new Date();
-  const periodMs = period === "month" ? 30 * 86400000 : period === "quarter" ? 90 * 86400000 : null;
-  const cutoff = periodMs ? new Date(now.getTime() - periodMs) : null;
+  const presenceData = store.get(KEYS.presence) || {};
+  const userPresence = presenceData[viewEmail];
 
-  const userActivity = activity.filter((a) => {
-    if (a.userId !== viewEmail) return false;
-    if (cutoff && new Date(a.time) < cutoff) return false;
-    return true;
+  // Compute which weeks fall within the selected period
+  const getWeekKeysForPeriod = () => {
+    const keys = new Set();
+    if (period === "all") {
+      // Include all weeks present in weeklyAccumulated
+      const acc = userPresence?.weeklyAccumulated || {};
+      Object.keys(acc).forEach(k => keys.add(k));
+      // Also include current week
+      keys.add(`${now.getFullYear()}-W${String(getWeekNum(now)).padStart(2, "0")}`);
+    } else {
+      const periodMs = period === "month" ? 30 * 86400000 : 90 * 86400000;
+      const cutoff = new Date(now.getTime() - periodMs);
+      let cursor = new Date(cutoff);
+      while (cursor <= now) {
+        keys.add(`${cursor.getFullYear()}-W${String(getWeekNum(cursor)).padStart(2, "0")}`);
+        cursor = new Date(cursor.getTime() + 7 * 86400000);
+      }
+      keys.add(`${now.getFullYear()}-W${String(getWeekNum(now)).padStart(2, "0")}`);
+    }
+    return keys;
+  };
+
+  const currentWeekKey = `${now.getFullYear()}-W${String(getWeekNum(now)).padStart(2, "0")}`;
+
+  // Sum accumulated ms from completed past sessions for the relevant period
+  const relevantWeekKeys = getWeekKeysForPeriod();
+  const acc = userPresence?.weeklyAccumulated || {};
+  let totalMs = 0;
+  relevantWeekKeys.forEach(wk => {
+    if (acc[wk]) totalMs += acc[wk];
   });
 
-  // Estimate hours: count unique hours from activity timestamps
-  const presenceData = store.get(KEYS.presence) || {};
-const userPresence = presenceData[viewEmail];
-const sessionStartHour = userPresence?.sessionStart
-  ? (() => {
-      const d = new Date(userPresence.sessionStart);
-      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}`;
-    })()
-  : null;
-
-// Count accumulated minutes from all activity timestamps in 2-minute buckets
-  const activityMinuteSet = new Set(
-    userActivity.map((a) => {
-      const d = new Date(a.time);
-      const bucket = Math.floor(d.getMinutes() / 2);
-      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}-${bucket}`;
-    })
-  );
-  // Also count current session minutes if online
-  if (userPresence?.sessionStart && userPresence?.online) {
+  // Add current active session if online and it falls within the period
+  if (userPresence?.online && userPresence?.sessionStart) {
     const sessionStart = new Date(userPresence.sessionStart);
-    const sessionEnd = new Date();
-    let current = new Date(sessionStart);
-    while (current <= sessionEnd) {
-      const bucket = Math.floor(current.getMinutes() / 2);
-      activityMinuteSet.add(`${current.getFullYear()}-${current.getMonth()}-${current.getDate()}-${current.getHours()}-${bucket}`);
-      current = new Date(current.getTime() + 2 * 60 * 1000);
+    const sessionWeekKey = `${sessionStart.getFullYear()}-W${String(getWeekNum(sessionStart)).padStart(2, "0")}`;
+    if (relevantWeekKeys.has(sessionWeekKey)) {
+      const liveMs = now.getTime() - sessionStart.getTime();
+      if (liveMs > 0) totalMs += liveMs;
     }
   }
-  // Convert 2-minute buckets to hours (each bucket = 2 minutes = 2/60 of an hour)
-  const uniqueHours = Math.round((activityMinuteSet.size * 2) / 60 * 10) / 10;
+
+  // Also check for stale "online" (tab closed without beforeunload firing)
+  // If lastSeen > 2 min ago and still marked online, count up to lastSeen
+  if (userPresence?.online && userPresence?.sessionStart && userPresence?.lastSeen) {
+    const lastSeenMs = new Date(userPresence.lastSeen).getTime();
+    const stale = now.getTime() - lastSeenMs > 2 * 60 * 1000;
+    if (stale) {
+      // Subtract the live addition and add only up to lastSeen
+      const sessionStart = new Date(userPresence.sessionStart);
+      const sessionWeekKey = `${sessionStart.getFullYear()}-W${String(getWeekNum(sessionStart)).padStart(2, "0")}`;
+      if (relevantWeekKeys.has(sessionWeekKey)) {
+        // Remove what we added for live session
+        const liveMs = now.getTime() - sessionStart.getTime();
+        if (liveMs > 0) totalMs -= liveMs;
+        // Add only up to lastSeen
+        const cappedMs = lastSeenMs - sessionStart.getTime();
+        if (cappedMs > 0) totalMs += cappedMs;
+      }
+    }
+  }
+
+  const uniqueHours = Math.round((totalMs / 3600000) * 10) / 10;
 
   const presenceInfo = presence[viewEmail];
   const lastSeen = presenceInfo?.lastSeen ? new Date(presenceInfo.lastSeen) : null;
@@ -10869,18 +11010,17 @@ useEffect(() => {
   setSnapshotSaved(true);
 }, [viewEmail, score, uniqueHours, hoursPercent]);
 
-// Real-time refresh every 2 minutes so active session minutes are never missed
+// Real-time refresh every 30 seconds so live session time updates visibly
 useEffect(() => {
   const interval = setInterval(() => {
-    // Update presence heartbeat so current session is counted
+    // Update presence heartbeat
     const presence = store.get(KEYS.presence) || {};
     if (presence[viewEmail]?.online) {
       presence[viewEmail].lastSeen = new Date().toISOString();
       store.set(KEYS.presence, presence);
     }
-    // Force re-render by updating a dummy state trigger
     setSnapshotSaved(prev => !prev);
-  }, 2 * 60 * 1000);
+  }, 30 * 1000);
   return () => clearInterval(interval);
 }, [viewEmail]);
   const openHoursEdit = () => {
@@ -15704,9 +15844,13 @@ const inactivityRef = useRef(null);
       1000
     );
 
-    // Heartbeat: update presence every 60 seconds while logged in
+    // Heartbeat: update lastSeen every 60 seconds while logged in (without forcing new session)
     const heartbeat = setInterval(() => {
-      updatePresence(user.email, true);
+      const presence = store.get(KEYS.presence) || {};
+      if (presence[user.email]?.online) {
+        presence[user.email].lastSeen = new Date().toISOString();
+        store.set(KEYS.presence, presence);
+      }
     }, 60000);
 
     // Mark offline when tab is closed without signing out
@@ -15938,8 +16082,9 @@ if (pdData?.value && pdData.value[u.email]) {
 if (u.role === "admin") isSigned = true;
 
 setAgreementSigned(isSigned);
+migrateHoursFromActivity(u.email);
 setUser(u);
-updatePresence(u.email, true, true);  // force fresh sessionStart on every login
+updatePresence(u.email, true, true);
 resetInactivity();
   }}
 />
