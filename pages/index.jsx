@@ -7418,17 +7418,17 @@ const platformWeek = Math.floor(daysSinceLaunch / 7) + 1;
       ...form,
       submittedAt: new Date().toISOString(),
     });
-    store.set(KEYS.weeklyReports, reps);
+store.set(KEYS.weeklyReports, reps);
     addActivity(
       user.email,
       "submitted weekly report",
-      `W${week} ${year}`,
+      `W${platformWeek} ${year}`,
       null
     );
     addNotif(
       ADMIN_EMAIL,
       "report",
-      `${user.email} submitted their weekly report for W${week}`
+      `${user.email} submitted their weekly report for W${platformWeek}`
     );
     setForm({ tasks: "", blockers: "", goals: "" });
     setShowForm(false);
