@@ -4759,6 +4759,7 @@ const Projects = ({ user }) => {
 const [editProjectForm, setEditProjectForm] = useState({});
   const [editingPrivateProject, setEditingPrivateProject] = useState(false);
   const [privateTaskUserFilter, setPrivateTaskUserFilter] = useState("all");
+  const [publicTaskUserFilter, setPublicTaskUserFilter] = useState("all");
 const [privateProjectForm, setPrivateProjectForm] = useState({ name: "", description: "" });
 const [editTaskForm, setEditTaskForm] = useState({});
 const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", deadline: "" });
@@ -4898,6 +4899,8 @@ addNotif(ADMIN_EMAIL, "task", `${user.email} marked a task as ${newStatus}`);
       if (user.role === "admin" && privateTaskUserFilter !== "all" && t.assignee !== privateTaskUserFilter) return false;
       return true;
     }
+    // Public task user filter
+    if (publicTaskUserFilter !== "all" && t.assignee !== publicTaskUserFilter) return false;
     return true;
   });
     const contributions = (p.members || []).map((em) => {
@@ -5104,6 +5107,38 @@ addNotif(ADMIN_EMAIL, "task", `${user.email} marked a task as ${newStatus}`);
                   + Add Task
                 </Btn>
               )}
+              {user.role === "admin" && (
+  <Btn
+    onClick={() => setShowAddPrivateTask(true)}
+    style={{ padding: "4px 14px", fontSize: 11, background: PURPLE + "22", border: `1px solid ${PURPLE}44`, color: PURPLE }}
+  >
+    + Private Task
+  </Btn>
+)}
+{(() => {
+  const publicAssignees = [...new Set(
+    (p.tasks || [])
+      .filter(t => !t.isPrivate && !t.isProjectPrivate && !t.isAdminPrivate && t.assignee)
+      .map(t => t.assignee)
+  )];
+  if (publicAssignees.length < 2) return null;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontFamily: "'DM Mono',monospace" }}>MEMBER:</span>
+      <select
+        value={publicTaskUserFilter}
+        onChange={(e) => setPublicTaskUserFilter(e.target.value)}
+        style={{ padding: "4px 10px", background: "rgba(255,255,255,0.05)", border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", fontSize: 11, outline: "none", fontFamily: "'DM Mono',monospace" }}
+      >
+        <option value="all">All Members</option>
+        {publicAssignees.map(em => {
+          const u = allUsers[em] || { name: em };
+          return <option key={em} value={em}>{u.name || em}</option>;
+        })}
+      </select>
+    </div>
+  );
+})()}
               {user.role === "admin" && (
   <Btn
     onClick={() => setShowAddPrivateTask(true)}
