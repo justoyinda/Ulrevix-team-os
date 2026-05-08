@@ -7703,8 +7703,8 @@ const Reports = ({ user }) => {
           }}
         >
           <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", marginBottom: 16 }}>
-            {tab === "weekly" ? `Week ${week}, ${year}` : `${MONTHS[month]} ${year}`} Report
-          </div>
+  {tab === "weekly" ? `${MONTHS[month]} ${year} — Week ${week} Report` : `${MONTHS[month]} ${year}`} Report
+</div>
           {tab === "weekly" ? (
             <>
               {[
