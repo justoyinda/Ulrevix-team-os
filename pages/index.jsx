@@ -1228,7 +1228,7 @@ const ConfidentialityGate = ({ user, onSigned }) => {
     });
   };
 
-  const handleSign = () => {
+  const handleSign = async () => {
     setErr("");
     if (!agreed) { setErr("You must check the agreement box to proceed."); return; }
     if (!fullName.trim()) { setErr("Please enter your full name to sign."); return; }
@@ -1241,6 +1241,11 @@ const ConfidentialityGate = ({ user, onSigned }) => {
       signDate,
     };
     store.set(KEYS.confidentialitySigned, allSigned);
+    await supabase.from("platform_data").upsert(
+      { key: "ulx_confidentiality_signed", value: allSigned, updated_at: new Date().toISOString() },
+      { onConflict: "key" }
+    );
+    await sbAuth.setConfidentialitySigned(user.email, fullName.trim(), signDate);
     addActivity(user.email, "signed the Confidentiality and Build Agreement", "", null);
     addNotif(ADMIN_EMAIL, "task", `${user.email} has signed the Confidentiality and Build Agreement.`);
     setSubmitting(false);
