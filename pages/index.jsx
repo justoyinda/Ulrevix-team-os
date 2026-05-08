@@ -12804,12 +12804,10 @@ const [confTab, setConfTab] = useState("view");
     if (!existing.includes(em) && !INITIAL_MEMBER_EMAILS.includes(em)) {
       existing.push(em);
       store.set(KEYS.pendingEmails, existing);
-      // Force sync to Supabase immediately
       await supabase.from("platform_data").upsert(
         { key: "ulx_pending_emails", value: existing, updated_at: new Date().toISOString() },
         { onConflict: "key" }
       );
-      // If registering as admin, update user role immediately if user exists
       if (newEmailRole === "admin") {
         const users = store.get(KEYS.users) || {};
         if (users[em]) {
@@ -12825,7 +12823,6 @@ const [confTab, setConfTab] = useState("view");
         }. Thank you for joining our platform.`
       );
       addActivity(user.email, `added new ${newEmailRole}`, em, null);
-      // Log to email history
       const hist = store.get(KEYS.emailHistory) || [];
       hist.unshift({
         email: em,
@@ -12835,6 +12832,10 @@ const [confTab, setConfTab] = useState("view");
         at: new Date().toISOString(),
       });
       store.set(KEYS.emailHistory, hist);
+      await supabase.from("platform_data").upsert(
+        { key: "ulx_email_history", value: hist, updated_at: new Date().toISOString() },
+        { onConflict: "key" }
+      );
     }
     setNewEmail("");
     setNewEmailRole("member");
