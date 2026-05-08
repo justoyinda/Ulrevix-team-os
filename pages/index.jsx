@@ -8043,9 +8043,9 @@ const ActivityChat = ({ user, setGlobalCall = () => {} }) => {
   }, [activeCall?.callId, activeCall?.type]);
 
   useEffect(() => {
-    if (bottomRef.current)
-      bottomRef.current.scrollIntoView({ behavior: "smooth" });
-  }, [messages, chatTarget]);
+  if (bottomRef.current)
+    bottomRef.current.scrollIntoView({ behavior: "smooth" });
+}, [chatTarget]);
 
   const sendMsg = () => {
     if (!chatMsg.trim() || !chatTarget) return;
