@@ -7492,7 +7492,16 @@ const platformWeek = Math.floor(daysSinceLaunch / 7) + 1;
       const existingReq = (store.get(KEYS.reportDeleteRequests) || []).find(
         (req) => req.reportId === r.id && req.status === "pending"
       );
-      const reportLabel = tab === "weekly" ? `W${r.week} ${r.year}` : `${MONTHS[r.month]} ${r.year}`;
+      const reportLabel = tab === "weekly" ? (() => {
+        const launchDate = store.get(KEYS.launchDate);
+        if (launchDate) {
+          const reportDate = new Date(r.submittedAt);
+          const daysSinceLaunch = Math.floor((reportDate - new Date(launchDate)) / 86400000);
+          const platformWeek = Math.floor(daysSinceLaunch / 7) + 1;
+          return `W${platformWeek} ${r.year}`;
+        }
+        return `W${r.week} ${r.year}`;
+      })() : `${MONTHS[r.month]} ${r.year}`;
       const isRequestingThis = reportDeleteReq?.id === r.id;
       return (
       <div
@@ -7520,7 +7529,16 @@ const platformWeek = Math.floor(daysSinceLaunch / 7) + 1;
               </div>
               <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>
                 {tab === "weekly"
-                  ? `W${r.week} ${r.year}`
+                  ? (() => {
+                      const launchDate = store.get(KEYS.launchDate);
+                      if (launchDate) {
+                        const reportDate = new Date(r.submittedAt);
+                        const daysSinceLaunch = Math.floor((reportDate - new Date(launchDate)) / 86400000);
+                        const platformWeek = Math.floor(daysSinceLaunch / 7) + 1;
+                        return `W${platformWeek} ${r.year}`;
+                      }
+                      return `W${r.week} ${r.year}`;
+                    })()
                   : `${MONTHS[r.month]} ${r.year}`}{" "}
                 · {timeAgo(r.submittedAt)}
               </div>
