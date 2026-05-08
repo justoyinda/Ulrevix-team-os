@@ -14374,15 +14374,29 @@ const deleteUserAccount = async (em) => {
     const [signedData, setSignedData] = useState({});
 
     useEffect(() => {
-      const refresh = () => {
+  const refresh = async () => {
+    try {
+      const { data } = await supabase
+        .from("platform_data")
+        .select("value")
+        .eq("key", "ulx_confidentiality_signed")
+        .maybeSingle();
+      if (data?.value) {
+        store.set(KEYS.confidentialitySigned, data.value);
+        setSignedData(data.value);
+      } else {
         const local = store.get(KEYS.confidentialitySigned) || {};
         setSignedData(local);
-      };
-      refresh();
-      // Re-read every 3 seconds to pick up new signatures synced from Supabase
-      const t = setInterval(refresh, 3000);
-      return () => clearInterval(t);
-    }, []);
+      }
+    } catch (e) {
+      const local = store.get(KEYS.confidentialitySigned) || {};
+      setSignedData(local);
+    }
+  };
+  refresh();
+  const t = setInterval(refresh, 3000);
+  return () => clearInterval(t);
+}, []);
 
     return (
       <div>
