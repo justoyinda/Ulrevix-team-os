@@ -7332,6 +7332,9 @@ const Reports = ({ user }) => {
   const week = getWeekNum(now);
   const month = now.getMonth();
   const year = now.getFullYear();
+  const launchDate = store.get(KEYS.launchDate);
+const daysSinceLaunch = launchDate ? Math.floor((now - new Date(launchDate)) / 86400000) : 0;
+const platformWeek = Math.floor(daysSinceLaunch / 7) + 1;
 
   const load = () => {
     const weeklyAll = store.get(KEYS.weeklyReports) || [];
@@ -7703,7 +7706,7 @@ const Reports = ({ user }) => {
           }}
         >
           <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", marginBottom: 16 }}>
-  {tab === "weekly" ? `${MONTHS[month]} ${year} — Week ${week} Report` : `${MONTHS[month]} ${year}`} Report
+  {tab === "weekly" ? `${MONTHS[month]} ${year} — Week ${platformWeek} Report` : `${MONTHS[month]} ${year} Report`}
 </div>
           {tab === "weekly" ? (
             <>
