@@ -14401,8 +14401,6 @@ const deleteUserAccount = async (em) => {
     }
   };
   refresh();
-  const t = setInterval(refresh, 3000);
-  return () => clearInterval(t);
 }, []);
 
     return (
