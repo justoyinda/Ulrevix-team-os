@@ -12785,15 +12785,15 @@ const [confTab, setConfTab] = useState("view");
   useEffect(() => {
     load();
     loadPwResets();
-    // Poll every 10 seconds so admin sees new requests without refreshing
     const interval = setInterval(loadPwResets, 10000);
-    // Also reload the member list every 10 seconds to stay in sync
-    const loadInterval = setInterval(load, 10000);
+    const loadInterval = setInterval(() => {
+      if (confTab !== "signed") load();
+    }, 10000);
     return () => {
       clearInterval(interval);
       clearInterval(loadInterval);
     };
-  }, []);
+  }, [confTab]);
 
   const addMember = async () => {
     if (!newEmail.trim()) return;
