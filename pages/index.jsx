@@ -5494,241 +5494,57 @@ addNotif(ADMIN_EMAIL, "task", `${user.email} marked a task as ${newStatus}`);
               ))}
             </div>
 
-           {/* Project Files — admin uploads, visible to all */}
-{(() => {
-  const pfKey = `${KEYS.taskUploads}_${p.id}___project_files__`;
-  const [pfUploads, setPfUploads] = useState([]);
-  const [pfLinkInput, setPfLinkInput] = useState("");
-  const [pfShowLink, setPfShowLink] = useState(false);
-  const [pfUploading, setPfUploading] = useState(false);
-  const [pfErr, setPfErr] = useState("");
-  const pfFileRef = useRef();
-
-  useEffect(() => {
-    const loadPf = async () => {
-      try {
-        const { data } = await supabase
-          .from("platform_data")
-          .select("value")
-          .eq("key", pfKey)
-          .maybeSingle();
-        if (data?.value && Array.isArray(data.value)) {
-          localStorage.setItem(pfKey, JSON.stringify(data.value));
-          setPfUploads(data.value);
-        } else {
-          const local = store.get(pfKey) || [];
-          setPfUploads(local);
-        }
-      } catch {
-        setPfUploads(store.get(pfKey) || []);
-      }
-    };
-    loadPf();
-  }, [pfKey]);
-
-  const savePfUploads = async (updated) => {
-    store.set(pfKey, updated);
-    await supabase.from("platform_data").upsert(
-      { key: pfKey, value: updated, updated_at: new Date().toISOString() },
-      { onConflict: "key" }
-    );
-    setPfUploads(updated);
-  };
-
-  const handlePfFile = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setPfErr("File exceeds 5MB. Please use the link option instead.");
-      e.target.value = "";
-      setPfShowLink(true);
-      return;
-    }
-    setPfErr(""); setPfUploading(true);
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const entry = {
-        id: Date.now().toString() + Math.random().toString(36).slice(2),
-        fileName: file.name,
-        fileType: file.type,
-        fileSize: file.size,
-        uploadedBy: user.email,
-        uploadedAt: new Date().toISOString(),
-        data: reader.result,
-        isLink: false,
-        title: "",
-      };
-      const updated = [...pfUploads, entry];
-      await savePfUploads(updated);
-      setPfUploading(false);
-    };
-    reader.onerror = () => { setPfErr("Upload failed."); setPfUploading(false); };
-    reader.readAsDataURL(file);
-    e.target.value = "";
-  };
-
-  const handlePfLink = async () => {
-    if (!pfLinkInput.trim()) return;
-    const entry = {
-      id: Date.now().toString() + Math.random().toString(36).slice(2),
-      fileName: pfLinkInput.trim(),
-      fileType: "link",
-      fileSize: 0,
-      uploadedBy: user.email,
-      uploadedAt: new Date().toISOString(),
-      data: pfLinkInput.trim(),
-      isLink: true,
-      title: "",
-    };
-    await savePfUploads([...pfUploads, entry]);
-    setPfLinkInput(""); setPfShowLink(false);
-  };
-
-  const deletePfUpload = async (id) => {
-    if (!window.confirm("Delete this project file?")) return;
-    await savePfUploads(pfUploads.filter(u => u.id !== id));
-  };
-
-  const updatePfTitle = async (id, title) => {
-    const updated = pfUploads.map(u => u.id === id ? { ...u, title } : u);
-    await savePfUploads(updated);
-  };
-
-  const formatSize = (bytes) => {
-    if (!bytes) return "";
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const isImage = (type) => type && type.startsWith("image/");
-
-  if (pfUploads.length === 0 && user.email !== ADMIN_EMAIL) return null;
-
+            {/* Project Files — admin upload only */}
+{user.email === ADMIN_EMAIL && (
+  <div style={{
+    background: CARD,
+    border: `1px solid ${GOLD}33`,
+    borderRadius: 12,
+    padding: 18,
+    marginTop: 16,
+  }}>
+    <div style={{ fontSize: 11, color: GOLD, fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em", marginBottom: 12 }}>
+      PROJECT FILES
+    </div>
+    <TaskUploadSection
+      projectId={p.id}
+      taskId={"__project_files__"}
+      taskTitle={p.name}
+      uploaderEmail={user.email}
+      allUsers={allUsers}
+      canUpload={true}
+      viewerRole="admin"
+    />
+  </div>
+)}
+{user.email !== ADMIN_EMAIL && (() => {
+  const uploads = store.get(`${KEYS.taskUploads}_${p.id}___project_files__`) || [];
+  const approvedUploads = uploads.filter(u => {
+    const reviewKey = `${KEYS.taskUploadReviews}_${p.id}___project_files___${u.id}`;
+    const review = store.get(reviewKey);
+    return review?.status === "approved";
+  });
+  if (approvedUploads.length === 0) return null;
   return (
     <div style={{
       background: CARD,
-      border: `1px solid ${GOLD}44`,
+      border: `1px solid ${GOLD}33`,
       borderRadius: 12,
       padding: 18,
       marginTop: 16,
     }}>
-      <div style={{ fontSize: 11, color: GOLD, fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em", marginBottom: 14 }}>
-        PROJECT FILES {pfUploads.length > 0 ? `(${pfUploads.length})` : ""}
+      <div style={{ fontSize: 11, color: GOLD, fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em", marginBottom: 12 }}>
+        PROJECT FILES
       </div>
-
-      {/* File list — visible to all */}
-      {pfUploads.length === 0 && user.email === ADMIN_EMAIL && (
-        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", fontStyle: "italic", marginBottom: 12 }}>
-          No project files uploaded yet.
-        </div>
-      )}
-
-      {pfUploads.map((u) => {
-        const [editingTitle, setEditingTitle] = useState(false);
-        const [titleBuf, setTitleBuf] = useState(u.title || "");
-        return (
-          <div key={u.id} style={{
-            background: "rgba(255,255,255,0.03)",
-            border: `1px solid ${BORDER}`,
-            borderRadius: 8,
-            padding: "12px 14px",
-            marginBottom: 10,
-          }}>
-            {/* Title row */}
-            <div style={{ marginBottom: 8 }}>
-              {user.email === ADMIN_EMAIL ? (
-                editingTitle ? (
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <input
-                      value={titleBuf}
-                      onChange={(e) => setTitleBuf(e.target.value)}
-                      placeholder="Enter a title for this file..."
-                      style={{ flex: 1, padding: "6px 10px", background: "rgba(255,255,255,0.06)", border: `1px solid ${GOLD}`, borderRadius: 6, color: "#fff", fontSize: 12, outline: "none" }}
-                    />
-                    <button onClick={async () => { await updatePfTitle(u.id, titleBuf); setEditingTitle(false); }} style={{ padding: "5px 12px", background: TEAL, border: "none", borderRadius: 6, color: BG, fontSize: 11, cursor: "pointer", fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>Save</button>
-                    <button onClick={() => { setTitleBuf(u.title || ""); setEditingTitle(false); }} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.3)", cursor: "pointer", fontSize: 16 }}>×</button>
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: u.title ? "#fff" : "rgba(255,255,255,0.25)", fontStyle: u.title ? "normal" : "italic", flex: 1 }}>
-                      {u.title || "Untitled — click to add a title"}
-                    </span>
-                    <button onClick={() => { setTitleBuf(u.title || ""); setEditingTitle(true); }} style={{ padding: "3px 10px", background: GOLD + "22", border: `1px solid ${GOLD}44`, borderRadius: 5, color: GOLD, fontSize: 10, cursor: "pointer", fontFamily: "'DM Mono',monospace" }}>EDIT TITLE</button>
-                  </div>
-                )
-              ) : (
-                u.title ? (
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", marginBottom: 2 }}>{u.title}</div>
-                ) : null
-              )}
-            </div>
-
-            {/* File info row */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ fontSize: 20, flexShrink: 0 }}>
-                {u.isLink ? "🔗" : isImage(u.fileType) ? "🖼" : u.fileType?.includes("pdf") ? "📄" : u.fileType?.includes("video") ? "🎬" : "📎"}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {u.isLink ? u.data : u.fileName}
-                </div>
-                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontFamily: "'DM Mono',monospace", marginTop: 2 }}>
-                  {formatSize(u.fileSize)}{u.fileSize ? " · " : ""}{timeAgo(u.uploadedAt)}
-                </div>
-              </div>
-              {isImage(u.fileType) && !u.isLink && (
-                <img src={u.data} alt={u.fileName} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4, flexShrink: 0, border: `1px solid ${BORDER}` }} />
-              )}
-              {u.isLink ? (
-                <a href={u.data} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
-                  <button style={{ padding: "5px 12px", background: TEAL + "22", border: `1px solid ${TEAL}44`, borderRadius: 6, color: TEAL, fontSize: 11, cursor: "pointer", fontFamily: "'DM Mono',monospace", flexShrink: 0 }}>↗ Open</button>
-                </a>
-              ) : (
-                <button onClick={() => { const a = document.createElement("a"); a.href = u.data; a.download = u.fileName; a.click(); }} style={{ padding: "5px 12px", background: TEAL + "22", border: `1px solid ${TEAL}44`, borderRadius: 6, color: TEAL, fontSize: 11, cursor: "pointer", fontFamily: "'DM Mono',monospace", flexShrink: 0 }}>↓ Download</button>
-              )}
-              {user.email === ADMIN_EMAIL && (
-                <button onClick={() => deletePfUpload(u.id)} style={{ padding: "5px 10px", background: RED + "22", border: `1px solid ${RED}44`, borderRadius: 6, color: RED, fontSize: 11, cursor: "pointer", fontFamily: "'DM Mono',monospace", flexShrink: 0 }}>🗑</button>
-              )}
-            </div>
-          </div>
-        );
-      })}
-
-      {/* Upload controls — admin only */}
-      {user.email === ADMIN_EMAIL && (
-        <div style={{ marginTop: pfUploads.length > 0 ? 10 : 0 }}>
-          {pfErr && <div style={{ fontSize: 11, color: RED, marginBottom: 8 }}>{pfErr}</div>}
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <input ref={pfFileRef} type="file" style={{ display: "none" }} onChange={handlePfFile} />
-            <button
-              onClick={() => pfFileRef.current?.click()}
-              disabled={pfUploading}
-              style={{ padding: "7px 14px", background: pfUploading ? "rgba(255,255,255,0.05)" : GOLD + "22", border: `1px solid ${GOLD}44`, borderRadius: 6, color: pfUploading ? "rgba(255,255,255,0.3)" : GOLD, fontSize: 11, cursor: pfUploading ? "not-allowed" : "pointer", fontFamily: "'DM Mono',monospace" }}
-            >
-              {pfUploading ? "Uploading…" : "+ Upload File (≤5MB)"}
-            </button>
-            <button
-              onClick={() => setPfShowLink(!pfShowLink)}
-              style={{ padding: "7px 14px", background: PURPLE + "22", border: `1px solid ${PURPLE}44`, borderRadius: 6, color: PURPLE, fontSize: 11, cursor: "pointer", fontFamily: "'DM Mono',monospace" }}
-            >
-              🔗 Add Link
-            </button>
-          </div>
-          {pfShowLink && (
-            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
-              <input
-                value={pfLinkInput}
-                onChange={(e) => setPfLinkInput(e.target.value)}
-                placeholder="Paste Google Drive, Dropbox, or any file link..."
-                style={{ flex: 1, padding: "7px 10px", background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", fontSize: 12, outline: "none" }}
-              />
-              <button onClick={handlePfLink} style={{ padding: "7px 14px", background: PURPLE, border: "none", borderRadius: 6, color: BG, fontSize: 11, cursor: "pointer", fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>Add</button>
-              <button onClick={() => { setPfShowLink(false); setPfLinkInput(""); }} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.3)", cursor: "pointer", fontSize: 16 }}>×</button>
-            </div>
-          )}
-        </div>
-      )}
+      <TaskUploadSection
+        projectId={p.id}
+        taskId={"__project_files__"}
+        taskTitle={p.name}
+        uploaderEmail={user.email}
+        allUsers={allUsers}
+        canUpload={false}
+        viewerRole="member"
+      />
     </div>
   );
 })()}
