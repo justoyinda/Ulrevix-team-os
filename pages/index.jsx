@@ -5494,21 +5494,76 @@ addNotif(ADMIN_EMAIL, "task", `${user.email} marked a task as ${newStatus}`);
               ))}
             </div>
 
-            {/* Project-level comments */}
-            <div style={{
-              background: CARD,
-              border: `1px solid ${BORDER}`,
-              borderRadius: 12,
-              padding: 18,
-              marginTop: 16,
-            }}>
-              <ProjectComments
-                projectId={p.id}
-                taskId={null}
-                user={user}
-                allUsers={allUsers}
-              />
-            </div>
+            {/* Project Files — admin upload only */}
+{user.email === ADMIN_EMAIL && (
+  <div style={{
+    background: CARD,
+    border: `1px solid ${GOLD}33`,
+    borderRadius: 12,
+    padding: 18,
+    marginTop: 16,
+  }}>
+    <div style={{ fontSize: 11, color: GOLD, fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em", marginBottom: 12 }}>
+      PROJECT FILES
+    </div>
+    <TaskUploadSection
+      projectId={p.id}
+      taskId={"__project_files__"}
+      taskTitle={p.name}
+      uploaderEmail={user.email}
+      allUsers={allUsers}
+      canUpload={true}
+      viewerRole="admin"
+    />
+  </div>
+)}
+{user.email !== ADMIN_EMAIL && (() => {
+  const uploads = store.get(`${KEYS.taskUploads}_${p.id}___project_files__`) || [];
+  const approvedUploads = uploads.filter(u => {
+    const reviewKey = `${KEYS.taskUploadReviews}_${p.id}___project_files___${u.id}`;
+    const review = store.get(reviewKey);
+    return review?.status === "approved";
+  });
+  if (approvedUploads.length === 0) return null;
+  return (
+    <div style={{
+      background: CARD,
+      border: `1px solid ${GOLD}33`,
+      borderRadius: 12,
+      padding: 18,
+      marginTop: 16,
+    }}>
+      <div style={{ fontSize: 11, color: GOLD, fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em", marginBottom: 12 }}>
+        PROJECT FILES
+      </div>
+      <TaskUploadSection
+        projectId={p.id}
+        taskId={"__project_files__"}
+        taskTitle={p.name}
+        uploaderEmail={user.email}
+        allUsers={allUsers}
+        canUpload={false}
+        viewerRole="member"
+      />
+    </div>
+  );
+})()}
+
+{/* Project-level comments */}
+<div style={{
+  background: CARD,
+  border: `1px solid ${BORDER}`,
+  borderRadius: 12,
+  padding: 18,
+  marginTop: 16,
+}}>
+  <ProjectComments
+    projectId={p.id}
+    taskId={null}
+    user={user}
+    allUsers={allUsers}
+  />
+</div>
 
           </div>
         </div>
