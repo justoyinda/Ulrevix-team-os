@@ -5882,7 +5882,7 @@ addNotif(ADMIN_EMAIL, "task", `${user.email} marked a task as ${newStatus}`);
             gap: 18,
           }}
         >
-          {projects.map((p) => {
+          {[...projects].reverse().map((p) => {
             const pct = calcPct(p.tasks);
             return (
               <div
