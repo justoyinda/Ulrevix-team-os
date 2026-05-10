@@ -4772,6 +4772,7 @@ const [newPrivateTask, setNewPrivateTask] = useState({ title: "", assignee: "", 
   const [projects, setProjects] = useState([]);
   const [selected, setSelected] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [sortOrder, setSortOrder] = useState("newest");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
   const [taskFilter, setTaskFilter] = useState("All");
   const [showAddTask, setShowAddTask] = useState(false);
@@ -5778,28 +5779,50 @@ addNotif(ADMIN_EMAIL, "task", `${user.email} marked a task as ${newStatus}`);
       />
 
       <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 22,
-        }}
-      >
-        <div
+  style={{
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 22,
+  }}
+>
+  <div
+    style={{
+      fontSize: 11,
+      color: "rgba(255,255,255,0.3)",
+      fontFamily: "'DM Mono',monospace",
+    }}
+  >
+    {projects.length} PROJECTS
+  </div>
+  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    <div style={{ display: "flex", gap: 4 }}>
+      {[{ v: "newest", label: "Newest" }, { v: "oldest", label: "Oldest" }].map(({ v, label }) => (
+        <button
+          key={v}
+          onClick={() => setSortOrder(v)}
           style={{
+            padding: "5px 12px",
+            borderRadius: 20,
+            border: `1px solid ${sortOrder === v ? GOLD : BORDER}`,
+            background: sortOrder === v ? GOLD + "22" : "transparent",
+            color: sortOrder === v ? GOLD : "rgba(255,255,255,0.4)",
             fontSize: 11,
-            color: "rgba(255,255,255,0.3)",
+            cursor: "pointer",
             fontFamily: "'DM Mono',monospace",
           }}
         >
-          {projects.length} PROJECTS
-        </div>
-        {user.role === "admin" && (
-          <Btn onClick={() => setShowCreate(true)} style={{ fontSize: 12 }}>
-            + New Project
-          </Btn>
-        )}
-      </div>
+          {label}
+        </button>
+      ))}
+    </div>
+    {user.role === "admin" && (
+      <Btn onClick={() => setShowCreate(true)} style={{ fontSize: 12 }}>
+        + New Project
+      </Btn>
+    )}
+  </div>
+</div>
 {(() => {
   const privateProj = projects.find(p => p.id === "__admin_private__");
   if (!privateProj || user.email !== ADMIN_EMAIL) return null;
@@ -5882,7 +5905,7 @@ addNotif(ADMIN_EMAIL, "task", `${user.email} marked a task as ${newStatus}`);
             gap: 18,
           }}
         >
-          {[...projects].reverse().map((p) => {
+          {(sortOrder === "newest" ? [...projects].reverse() : projects).map((p) => {
             const pct = calcPct(p.tasks);
             return (
               <div
