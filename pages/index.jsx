@@ -4452,6 +4452,203 @@ const AdminUploadReview = ({ uploadId, projectId, taskId, uploadedBy, currentSta
   );
 };
 
+const UploadItem = ({ u, projectId, taskId, allUsers, viewerRole, uploaderEmail, onReviewed, load }) => {
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(u.title || "");
+
+  const isMainAdmin = uploaderEmail === ADMIN_EMAIL && viewerRole === "admin";
+  const uploader = allUsers[u.uploadedBy] || { name: u.uploadedBy, color: GOLD };
+  const reviewKey = `${KEYS.taskUploadReviews}_${projectId}_${taskId}_${u.id}`;
+  const reviewData = store.get(reviewKey);
+  const uploadStatus = reviewData?.status || "pending";
+  const isUploader = u.uploadedBy === uploaderEmail;
+  const canSeeUpload = uploadStatus === "approved" || viewerRole === "admin" || isUploader;
+
+  const saveTitle = async () => {
+    const key = `${KEYS.taskUploads}_${projectId}_${taskId}`;
+    const existing = store.get(key) || [];
+    const updated = existing.map(item =>
+      item.id === u.id ? { ...item, title: titleDraft.trim() } : item
+    );
+    store.set(key, updated);
+    await supabase.from("platform_data").upsert(
+      { key, value: updated, updated_at: new Date().toISOString() },
+      { onConflict: "key" }
+    );
+    setEditingTitle(false);
+    load();
+  };
+
+  const deleteTitle = async () => {
+    const key = `${KEYS.taskUploads}_${projectId}_${taskId}`;
+    const existing = store.get(key) || [];
+    const updated = existing.map(item =>
+      item.id === u.id ? { ...item, title: "" } : item
+    );
+    store.set(key, updated);
+    await supabase.from("platform_data").upsert(
+      { key, value: updated, updated_at: new Date().toISOString() },
+      { onConflict: "key" }
+    );
+    setTitleDraft("");
+    setEditingTitle(false);
+    load();
+  };
+
+  const isImage = (type) => type && type.startsWith("image/");
+  const formatSize = (bytes) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const downloadFile = (upload) => {
+    const a = document.createElement("a");
+    a.href = upload.data;
+    a.download = upload.fileName;
+    a.click();
+  };
+
+  if (!canSeeUpload) return null;
+
+  return (
+    <div style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${uploadStatus === "approved" ? TEAL + "44" : uploadStatus === "rejected" ? RED + "44" : BORDER}`, borderRadius: 6, padding: "8px 12px", marginBottom: 6 }}>
+      {/* Title row — admin editable */}
+      {isMainAdmin && (
+        <div style={{ marginBottom: 6 }}>
+          {editingTitle ? (
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input
+                value={titleDraft}
+                onChange={e => setTitleDraft(e.target.value)}
+                placeholder="Add a title for this file…"
+                style={{ flex: 1, padding: "4px 8px", background: "rgba(255,255,255,0.06)", border: `1px solid ${GOLD}66`, borderRadius: 5, color: "#fff", fontSize: 11, outline: "none", fontFamily: "'Sora',sans-serif" }}
+                autoFocus
+                onKeyDown={e => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") { setEditingTitle(false); setTitleDraft(u.title || ""); } }}
+              />
+              <button onClick={saveTitle} style={{ padding: "3px 10px", background: TEAL, border: "none", borderRadius: 5, color: BG, fontSize: 10, cursor: "pointer", fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>Save</button>
+              <button onClick={() => { setEditingTitle(false); setTitleDraft(u.title || ""); }} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.3)", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>×</button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {u.title ? (
+                <>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: GOLD }}>{u.title}</span>
+                  <button onClick={() => { setEditingTitle(true); setTitleDraft(u.title); }} style={{ padding: "2px 7px", background: GOLD + "22", border: `1px solid ${GOLD}44`, borderRadius: 4, color: GOLD, fontSize: 9, cursor: "pointer", fontFamily: "'DM Mono',monospace" }}>EDIT</button>
+                  <button onClick={deleteTitle} style={{ padding: "2px 7px", background: RED + "18", border: `1px solid ${RED}33`, borderRadius: 4, color: RED, fontSize: 9, cursor: "pointer", fontFamily: "'DM Mono',monospace" }}>DELETE</button>
+                </>
+              ) : (
+                <button onClick={() => setEditingTitle(true)} style={{ padding: "2px 9px", background: "rgba(255,255,255,0.05)", border: `1px dashed ${GOLD}55`, borderRadius: 4, color: "rgba(255,255,255,0.35)", fontSize: 9, cursor: "pointer", fontFamily: "'DM Mono',monospace" }}>+ Add title</button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Title read-only for non-admin */}
+      {!isMainAdmin && u.title && (
+        <div style={{ fontSize: 12, fontWeight: 600, color: GOLD, marginBottom: 4 }}>{u.title}</div>
+      )}
+
+      {/* Existing file row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ fontSize: 18, flexShrink: 0 }}>
+          {u.isLink ? "🔗" : isImage(u.fileType) ? "🖼" : u.fileType?.includes("pdf") ? "📄" : u.fileType?.includes("video") ? "🎬" : "📎"}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.fileName}</div>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontFamily: "'DM Mono',monospace" }}>
+            {formatSize(u.fileSize)} · by {uploader.name || u.uploadedBy} · {timeAgo(u.uploadedAt)}
+          </div>
+          <div style={{ fontSize: 10, color: uploadStatus === "approved" ? TEAL : uploadStatus === "rejected" ? RED : GOLD, fontFamily: "'DM Mono',monospace", marginTop: 2 }}>
+            {uploadStatus === "approved" ? "✓ Approved" : uploadStatus === "rejected" ? "✗ Needs Revision" : "⏳ Pending Review"}
+          </div>
+          {uploadStatus === "rejected" && reviewData?.feedback && isUploader && (
+            <div style={{ fontSize: 11, color: RED, marginTop: 4, padding: "5px 8px", background: RED + "15", borderRadius: 5, borderLeft: `2px solid ${RED}` }}>
+              <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 9, display: "block", marginBottom: 2 }}>ADMIN FEEDBACK</span>
+              {reviewData.feedback}
+            </div>
+          )}
+        </div>
+        {(uploadStatus === "approved" || (viewerRole === "admin" && uploadStatus === "pending")) && (
+          <>
+            {isImage(u.fileType) && !u.isLink && (
+              <img src={u.data} alt={u.fileName} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4, flexShrink: 0, border: `1px solid ${BORDER}` }} />
+            )}
+            {u.isLink ? (
+              <a href={u.data} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
+                <button style={{ background: uploadStatus === "pending" ? GOLD + "22" : TEAL + "22", border: `1px solid ${uploadStatus === "pending" ? GOLD + "44" : TEAL + "44"}`, borderRadius: 6, color: uploadStatus === "pending" ? GOLD : TEAL, fontSize: 10, cursor: "pointer", padding: "4px 10px", fontFamily: "'DM Mono',monospace", flexShrink: 0 }}>
+                  ↗ Open Link
+                </button>
+              </a>
+            ) : (
+              <button onClick={() => downloadFile(u)} style={{ background: uploadStatus === "pending" ? GOLD + "22" : TEAL + "22", border: `1px solid ${uploadStatus === "pending" ? GOLD + "44" : TEAL + "44"}`, borderRadius: 6, color: uploadStatus === "pending" ? GOLD : TEAL, fontSize: 10, cursor: "pointer", padding: "4px 10px", fontFamily: "'DM Mono',monospace", flexShrink: 0 }}>
+                ↓ Download
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Admin review + delete controls — unchanged from original */}
+      {viewerRole === "admin" && (
+        <div>
+          <AdminUploadReview
+            uploadId={u.id}
+            projectId={projectId}
+            taskId={taskId}
+            uploadedBy={u.uploadedBy}
+            currentStatus={uploadStatus}
+            currentFeedback={reviewData?.feedback || ""}
+            onReviewed={onReviewed}
+            adminEmail={uploaderEmail}
+          />
+          <button
+            onClick={async () => {
+              if (!window.confirm("Delete this upload?")) return;
+              const key = `${KEYS.taskUploads}_${projectId}_${taskId}`;
+              const existing = store.get(key) || [];
+              const updated = existing.filter(up => up.id !== u.id);
+              store.set(key, updated);
+              await supabase.from("platform_data").upsert(
+                { key, value: updated, updated_at: new Date().toISOString() },
+                { onConflict: "key" }
+              );
+              const reviewKey2 = `${KEYS.taskUploadReviews}_${projectId}_${taskId}_${u.id}`;
+              store.set(reviewKey2, null);
+              await supabase.from("platform_data").upsert(
+                { key: reviewKey2, value: null, updated_at: new Date().toISOString() },
+                { onConflict: "key" }
+              );
+              if (updated.length === 0) {
+                const projects = store.get(KEYS.projects) || [];
+                const pi = projects.findIndex(p => p.id === projectId);
+                if (pi >= 0) {
+                  const ti = projects[pi].tasks.findIndex(t => t.id === taskId);
+                  if (ti >= 0 && projects[pi].tasks[ti].status === "Completed") {
+                    projects[pi].tasks[ti].status = "Not Started";
+                    projects[pi].tasks[ti].updatedAt = new Date().toISOString();
+                    store.set(KEYS.projects, projects);
+                    await supabase.from("platform_data").upsert(
+                      { key: KEYS.projects, value: projects, updated_at: new Date().toISOString() },
+                      { onConflict: "key" }
+                    );
+                    addNotif(projects[pi].tasks[ti].assignee, "task", `Your task "${projects[pi].tasks[ti].title}" has been reverted to Not Started because your upload was deleted by admin.`);
+                  }
+                }
+              }
+              await load();
+            }}
+            style={{ marginTop: 8, padding: "4px 12px", background: RED + "22", border: `1px solid ${RED}44`, borderRadius: 6, color: RED, fontSize: 10, cursor: "pointer", fontFamily: "'DM Mono',monospace" }}
+          >
+            🗑 Delete Upload
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const TaskUploadSection = ({ projectId, taskId, taskTitle, uploaderEmail, allUsers, canUpload = true, viewerRole = "member" }) => {
   const [uploads, setUploads] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -4586,122 +4783,19 @@ if (isPrivateLink && uploaderEmail === ADMIN_EMAIL) {
 
       {uploads.length > 0 && (
   <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
-    {uploads.map((u) => {
-      const uploader = allUsers[u.uploadedBy] || { name: u.uploadedBy, color: GOLD };
-      const reviewKey = `${KEYS.taskUploadReviews}_${projectId}_${taskId}_${u.id}`;
-      const reviewData = store.get(reviewKey);
-      const uploadStatus = reviewData?.status || "pending";
-      const isUploader = u.uploadedBy === uploaderEmail;
-      const isAdmin = viewerRole === "admin";
-      const canSeeUpload = uploadStatus === "approved" || isAdmin || isUploader;
-      if (!canSeeUpload) return null;
-      return (
-        <div key={u.id} style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${uploadStatus === "approved" ? TEAL + "44" : uploadStatus === "rejected" ? RED + "44" : BORDER}`, borderRadius: 6, padding: "8px 12px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ fontSize: 18, flexShrink: 0 }}>
-              {u.isLink ? "🔗" : isImage(u.fileType) ? "🖼" : u.fileType?.includes("pdf") ? "📄" : u.fileType?.includes("video") ? "🎬" : "📎"}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.fileName}</div>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontFamily: "'DM Mono',monospace" }}>
-                {formatSize(u.fileSize)} · by {uploader.name || u.uploadedBy} · {timeAgo(u.uploadedAt)}
-              </div>
-              <div style={{ fontSize: 10, color: uploadStatus === "approved" ? TEAL : uploadStatus === "rejected" ? RED : GOLD, fontFamily: "'DM Mono',monospace", marginTop: 2 }}>
-                {uploadStatus === "approved" ? "✓ Approved" : uploadStatus === "rejected" ? "✗ Needs Revision" : "⏳ Pending Review"}
-              </div>
-              {uploadStatus === "rejected" && reviewData?.feedback && isUploader && (
-                <div style={{ fontSize: 11, color: RED, marginTop: 4, padding: "5px 8px", background: RED + "15", borderRadius: 5, borderLeft: `2px solid ${RED}` }}>
-                  <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 9, display: "block", marginBottom: 2 }}>ADMIN FEEDBACK</span>
-                  {reviewData.feedback}
-                </div>
-              )}
-            </div>
-            {(uploadStatus === "approved" || (isAdmin && uploadStatus === "pending")) && (
-              <>
-                {isImage(u.fileType) && !u.isLink && (
-                  <img src={u.data} alt={u.fileName} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4, flexShrink: 0, border: `1px solid ${BORDER}` }} />
-                )}
-                {u.isLink ? (
-                  <a href={u.data} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
-                    <button style={{ background: uploadStatus === "pending" ? GOLD + "22" : TEAL + "22", border: `1px solid ${uploadStatus === "pending" ? GOLD + "44" : TEAL + "44"}`, borderRadius: 6, color: uploadStatus === "pending" ? GOLD : TEAL, fontSize: 10, cursor: "pointer", padding: "4px 10px", fontFamily: "'DM Mono',monospace", flexShrink: 0 }}>
-                      ↗ Open Link
-                    </button>
-                  </a>
-                ) : (
-                  <button onClick={() => downloadFile(u)} style={{ background: uploadStatus === "pending" ? GOLD + "22" : TEAL + "22", border: `1px solid ${uploadStatus === "pending" ? GOLD + "44" : TEAL + "44"}`, borderRadius: 6, color: uploadStatus === "pending" ? GOLD : TEAL, fontSize: 10, cursor: "pointer", padding: "4px 10px", fontFamily: "'DM Mono',monospace", flexShrink: 0 }}>
-                    ↓ Download
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-          {isAdmin && (
-            <div>
-              <AdminUploadReview
-                uploadId={u.id}
-                projectId={projectId}
-                taskId={taskId}
-                uploadedBy={u.uploadedBy}
-                currentStatus={uploadStatus}
-                currentFeedback={reviewData?.feedback || ""}
-                onReviewed={load}
-                adminEmail={uploaderEmail}
-              />
-              <button
-                onClick={async () => {
-                  if (!window.confirm("Delete this upload? If no uploads remain and the task is Completed, it will revert to Not Started.")) return;
-                  const key = `${KEYS.taskUploads}_${projectId}_${taskId}`;
-                  const existing = store.get(key) || [];
-                  const updated = existing.filter(up => up.id !== u.id);
-                  store.set(key, updated);
-                  await supabase.from("platform_data").upsert(
-                    { key, value: updated, updated_at: new Date().toISOString() },
-                    { onConflict: "key" }
-                  );
-                  const reviewKey = `${KEYS.taskUploadReviews}_${projectId}_${taskId}_${u.id}`;
-                  store.set(reviewKey, null);
-                  await supabase.from("platform_data").upsert(
-                    { key: reviewKey, value: null, updated_at: new Date().toISOString() },
-                    { onConflict: "key" }
-                  );
-                  if (updated.length === 0) {
-                    const projects = store.get(KEYS.projects) || [];
-                    const pi = projects.findIndex(p => p.id === projectId);
-                    if (pi >= 0) {
-                      const ti = projects[pi].tasks.findIndex(t => t.id === taskId);
-                      if (ti >= 0 && projects[pi].tasks[ti].status === "Completed") {
-                        projects[pi].tasks[ti].status = "Not Started";
-                        projects[pi].tasks[ti].updatedAt = new Date().toISOString();
-                        store.set(KEYS.projects, projects);
-                        await supabase.from("platform_data").upsert(
-                          { key: KEYS.projects, value: projects, updated_at: new Date().toISOString() },
-                          { onConflict: "key" }
-                        );
-                        addNotif(projects[pi].tasks[ti].assignee, "task", `Your task "${projects[pi].tasks[ti].title}" has been reverted to Not Started because your upload was deleted by admin.`);
-                      }
-                    }
-                  }
-                  await load();
-                }}
-                style={{
-                  marginTop: 8,
-                  padding: "4px 12px",
-                  background: RED + "22",
-                  border: `1px solid ${RED}44`,
-                  borderRadius: 6,
-                  color: RED,
-                  fontSize: 10,
-                  cursor: "pointer",
-                  fontFamily: "'DM Mono',monospace",
-                }}
-              >
-                🗑 Delete Upload
-              </button>
-            </div>
-          )}
-        </div>
-      );
-    })}
+    {uploads.map((u) => (
+      <UploadItem
+        key={u.id}
+        u={u}
+        projectId={projectId}
+        taskId={taskId}
+        allUsers={allUsers}
+        viewerRole={viewerRole}
+        uploaderEmail={uploaderEmail}
+        onReviewed={load}
+        load={load}
+      />
+    ))}
   </div>
 )}
 
