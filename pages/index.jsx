@@ -12530,6 +12530,33 @@ const Meetings = ({ user }) => {
                   ))}
                 </select>
               </div>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 10, fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em" }}>COLLABORATORS</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 160, overflowY: "auto" }}>
+                  {Object.entries(allUsers).map(([em, u]) => {
+                    const isIn = editMeetingForm.collaborators.includes(em);
+                    return (
+                      <div
+                        key={em}
+                        onClick={() => setEditMeetingForm(f => ({
+                          ...f,
+                          collaborators: isIn
+                            ? f.collaborators.filter(x => x !== em)
+                            : [...f.collaborators, em],
+                        }))}
+                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 8, background: isIn ? GOLD + "18" : "rgba(255,255,255,0.03)", border: `1px solid ${isIn ? GOLD + "44" : BORDER}`, cursor: "pointer" }}
+                      >
+                        <Avatar name={u.name || em} color={u.color || GOLD} size={26} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, color: "#fff" }}>{u.name || em}</div>
+                          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>{em}</div>
+                        </div>
+                        {isIn && <span style={{ color: GOLD }}>✓</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
               <div style={{ display: "flex", gap: 10 }}>
                 <Btn onClick={() => {
                   const ms = store.get(KEYS.meetings) || [];
@@ -12544,6 +12571,7 @@ const Meetings = ({ user }) => {
                     gmeetLink: editMeetingForm.gmeetLink,
                     fileLinks: editMeetingForm.fileLinks,
                     hostEmail: editMeetingForm.hostEmail,
+                    collaborators: [...new Set([...editMeetingForm.collaborators, editMeetingForm.hostEmail])],
                   };
                   store.set(KEYS.meetings, ms);
                   setSelected({ ...ms[idx] });
