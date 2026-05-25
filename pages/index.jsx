@@ -3504,6 +3504,7 @@ const Dashboard = ({ user }) => {
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState({});
   const [activity, setActivity] = useState([]);
+  const [projectSort, setProjectSort] = useState("newest");
 
   useEffect(() => {
     setProjects(store.get(KEYS.projects) || []);
@@ -3702,16 +3703,37 @@ setActivity(filteredActivity.slice(0, 8));
       >
         {/* projects */}
         <div>
-          <div
-            style={{
-              fontSize: 11,
-              color: "rgba(255,255,255,0.3)",
-              marginBottom: 14,
-              fontFamily: "'DM Mono',monospace",
-              letterSpacing: "0.08em",
-            }}
-          >
-            ACTIVE PROJECTS
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div
+              style={{
+                fontSize: 11,
+                color: "rgba(255,255,255,0.3)",
+                fontFamily: "'DM Mono',monospace",
+                letterSpacing: "0.08em",
+              }}
+            >
+              ACTIVE PROJECTS
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {[{ v: "newest", label: "Newest" }, { v: "oldest", label: "Oldest" }].map(({ v, label }) => (
+                <button
+                  key={v}
+                  onClick={() => setProjectSort(v)}
+                  style={{
+                    padding: "4px 12px",
+                    borderRadius: 20,
+                    border: `1px solid ${projectSort === v ? GOLD : BORDER}`,
+                    background: projectSort === v ? GOLD + "22" : "transparent",
+                    color: projectSort === v ? GOLD : "rgba(255,255,255,0.4)",
+                    fontSize: 10,
+                    cursor: "pointer",
+                    fontFamily: "'DM Mono',monospace",
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           {projects.length === 0 ? (
             <EmptyState
@@ -3725,7 +3747,7 @@ setActivity(filteredActivity.slice(0, 8));
             />
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {[...projects].reverse().slice(0, 5).map((p) => {
+              {(projectSort === "newest" ? [...projects].reverse() : projects).slice(0, 5).map((p) => {
                 const pct = calcPct(p.tasks);
                 return (
                   <div
