@@ -3725,7 +3725,7 @@ setActivity(filteredActivity.slice(0, 8));
             />
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {projects.slice(0, 5).map((p) => {
+              {[...projects].reverse().slice(0, 5).map((p) => {
                 const pct = calcPct(p.tasks);
                 return (
                   <div
