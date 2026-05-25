@@ -13588,6 +13588,39 @@ const deleteUserAccount = async (em) => {
                 </div>
               );
             })}
+            {(() => {
+              const allUsers = store.get(KEYS.users) || {};
+              const orphaned = Object.keys(allUsers).filter(em =>
+                em !== ADMIN_EMAIL &&
+                !allowedEmails.includes(em) &&
+                !blockedEmails.includes(em)
+              );
+              if (orphaned.length === 0) return null;
+              return (
+                <div style={{ marginTop: 20 }}>
+                  <div style={{ fontSize: 11, color: PURPLE, fontFamily: "'DM Mono',monospace", marginBottom: 10, letterSpacing: "0.08em" }}>
+                    UNLINKED ACCOUNTS ({orphaned.length}) — registered but not in any list
+                  </div>
+                  {orphaned.map(em => {
+                    const u = allUsers[em] || {};
+                    return (
+                      <div key={em} style={{ padding: "9px 12px", borderRadius: 8, background: PURPLE + "10", border: `1px solid ${PURPLE}33`, marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
+                        <div>
+                          <span style={{ color: "rgba(255,255,255,0.6)" }}>{em}</span>
+                          {u.name && <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 11, marginLeft: 8 }}>({u.name})</span>}
+                        </div>
+                        <Btn variant="danger" onClick={async () => {
+                          if (!window.confirm(`PERMANENTLY DELETE ${em}? This cannot be undone.`)) return;
+                          await deleteUserAccount(em);
+                        }} style={{ padding: "4px 10px", fontSize: 10, background: RED, color: "#fff", border: "none" }}>
+                          Delete Account
+                        </Btn>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
             {blockedEmails.length > 0 && (
               <div style={{ marginTop: 20 }}>
                 <div
