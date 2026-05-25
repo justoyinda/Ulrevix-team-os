@@ -12369,6 +12369,8 @@ const Meetings = ({ user }) => {
   const [showDeleteRequest, setShowDeleteRequest] = useState(null); // meeting object
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteReqErr, setDeleteReqErr] = useState("");
+  const [editingMeeting, setEditingMeeting] = useState(false);
+  const [editMeetingForm, setEditMeetingForm] = useState({});
 
   const submitDeleteRequest = (meeting) => {
     if (!deleteReason.trim()) {
@@ -12486,6 +12488,73 @@ const Meetings = ({ user }) => {
           <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.35)", cursor: "pointer", fontSize: 13 }}>
             ← Meetings
           </button>
+          {user.email === ADMIN_EMAIL && (
+            <Btn
+              variant="secondary"
+              onClick={() => {
+                setEditMeetingForm({
+                  title: m.title,
+                  description: m.description || "",
+                  date: m.date,
+                  time: m.time,
+                  gmeetLink: m.gmeetLink,
+                  fileLinks: m.fileLinks || "",
+                  hostEmail: m.hostEmail,
+                  collaborators: [...(m.collaborators || [])],
+                });
+                setEditingMeeting(true);
+              }}
+              style={{ padding: "6px 14px", fontSize: 11 }}
+            >
+              Edit Meeting
+            </Btn>
+          )}
+          {editingMeeting && user.email === ADMIN_EMAIL && (
+            <Modal title="Edit Meeting" onClose={() => setEditingMeeting(false)} width={560}>
+              <Inp label="Meeting Title" value={editMeetingForm.title} onChange={(v) => setEditMeetingForm(f => ({ ...f, title: v }))} placeholder="Meeting title" />
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 7, fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em" }}>DESCRIPTION</div>
+                <textarea value={editMeetingForm.description} onChange={(e) => setEditMeetingForm(f => ({ ...f, description: e.target.value }))} rows={2} placeholder="What is this meeting about?" style={{ width: "100%", padding: "11px 14px", background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}`, borderRadius: 8, color: "#fff", fontSize: 13, resize: "vertical" }} />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <Inp label="Date" value={editMeetingForm.date} onChange={(v) => setEditMeetingForm(f => ({ ...f, date: v }))} type="date" />
+                <Inp label="Time" value={editMeetingForm.time} onChange={(v) => setEditMeetingForm(f => ({ ...f, time: v }))} type="time" />
+              </div>
+              <Inp label="Google Meet Link" value={editMeetingForm.gmeetLink} onChange={(v) => setEditMeetingForm(f => ({ ...f, gmeetLink: v }))} placeholder="https://meet.google.com/xxx-xxxx-xxx" />
+              <Inp label="File Links (optional)" value={editMeetingForm.fileLinks} onChange={(v) => setEditMeetingForm(f => ({ ...f, fileLinks: v }))} placeholder="Google Drive, Notion, etc." />
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 7, fontFamily: "'DM Mono',monospace", letterSpacing: "0.08em" }}>HOST</div>
+                <select value={editMeetingForm.hostEmail} onChange={(e) => setEditMeetingForm(f => ({ ...f, hostEmail: e.target.value }))} style={{ width: "100%", padding: "11px 14px", background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}`, borderRadius: 8, color: "#fff", fontSize: 13 }}>
+                  {Object.entries(allUsers).map(([em, u]) => (
+                    <option key={em} value={em}>{u.name || em}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <Btn onClick={() => {
+                  const ms = store.get(KEYS.meetings) || [];
+                  const idx = ms.findIndex(x => x.id === m.id);
+                  if (idx < 0) return;
+                  ms[idx] = {
+                    ...ms[idx],
+                    title: editMeetingForm.title,
+                    description: editMeetingForm.description,
+                    date: editMeetingForm.date,
+                    time: editMeetingForm.time,
+                    gmeetLink: editMeetingForm.gmeetLink,
+                    fileLinks: editMeetingForm.fileLinks,
+                    hostEmail: editMeetingForm.hostEmail,
+                  };
+                  store.set(KEYS.meetings, ms);
+                  setSelected({ ...ms[idx] });
+                  setEditingMeeting(false);
+                  load();
+                  addActivity(user.email, "edited meeting details for:", editMeetingForm.title, null);
+                }} style={{ flex: 1 }}>Save Changes</Btn>
+                <Btn variant="secondary" onClick={() => setEditingMeeting(false)}>Cancel</Btn>
+              </div>
+            </Modal>
+          )}
           {(m.hostEmail === user.email || m.scheduledBy === user.email) && (() => {
             const reqs = store.get(KEYS.meetingDeleteRequests) || [];
             const pending = reqs.find((r) => r.meetingId === m.id && r.status === "pending");
